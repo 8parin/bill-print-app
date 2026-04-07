@@ -4,7 +4,8 @@ Bill Print Flask Application
 import os
 import json
 from io import BytesIO
-from flask import Flask, render_template, request, jsonify, send_file, url_for, make_response
+from flask import Flask, render_template, request, jsonify, send_file, url_for, make_response, session, redirect
+from functools import wraps
 from werkzeug.utils import secure_filename
 import re
 import zipfile
@@ -15,6 +16,20 @@ from src.pdf_generator_reportlab import PDFGeneratorReportLab as PDFGenerator
 from src.bill_data import CompanyInfo
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+APP_PASSWORD = os.environ.get('APP_PASSWORD', '')
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not APP_PASSWORD:
+            return f(*args, **kwargs)
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
 
 
 DEBUG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'debug')
@@ -148,13 +163,32 @@ def get_company_info():
     )
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        if request.form.get('password') == APP_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+        error = 'Incorrect password'
+    return render_template('login.html', error=error)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route('/')
+@login_required
 def index():
     """Main page"""
     return render_template('index.html', company=config['company'])
 
 
 @app.route('/upload', methods=['POST'])
+@login_required
 def upload_csv():
     """Handle CSV upload"""
     global current_invoices, current_csv_path, current_platform
@@ -243,6 +277,7 @@ def upload_csv():
 
 
 @app.route('/save-company', methods=['POST'])
+@login_required
 def save_company():
     """Save company info to config"""
     try:
@@ -261,6 +296,7 @@ def save_company():
 
 
 @app.route('/get-field-definitions')
+@login_required
 def get_field_definitions():
     """Get field definitions for mapping UI"""
     parser = _make_parser()
@@ -273,6 +309,7 @@ def get_field_definitions():
 
 
 @app.route('/set-platform', methods=['POST'])
+@login_required
 def set_platform():
     """Set the active platform (called when user changes dropdown)"""
     global current_platform
@@ -287,6 +324,7 @@ def set_platform():
 
 
 @app.route('/save-mapping', methods=['POST'])
+@login_required
 def save_mapping():
     """Save custom column mapping"""
     global current_invoices, current_csv_path, current_trimmed_df, current_pending_orders
@@ -442,6 +480,7 @@ def save_mapping():
 
 
 @app.route('/apply-return-decisions', methods=['POST'])
+@login_required
 def apply_return_decisions():
     """Apply user decisions about returned items, then parse invoices"""
     global current_invoices, current_csv_path, current_trimmed_df, current_pending_orders
@@ -538,6 +577,7 @@ def apply_return_decisions():
 
 
 @app.route('/preview')
+@login_required
 def preview_bill():
     """Preview first bill as HTML"""
     global current_invoices
@@ -561,6 +601,7 @@ def preview_bill():
 
 
 @app.route('/preview-by-order', methods=['POST'])
+@login_required
 def preview_by_order():
     """Preview specific bill by order number"""
     global current_invoices
@@ -604,6 +645,7 @@ def preview_by_order():
 
 
 @app.route('/generate', methods=['POST'])
+@login_required
 def generate_bills():
     """Generate all PDFs"""
     global current_invoices
@@ -659,6 +701,7 @@ def generate_bills():
 
 
 @app.route('/debug-bills')
+@login_required
 def debug_bills():
     """Return trimmed DataFrame bill assignment for debugging.
 
@@ -683,6 +726,7 @@ def debug_bills():
 
 
 @app.route('/generate-one', methods=['POST'])
+@login_required
 def generate_one_bill():
     """Generate single PDF (first invoice only)"""
     global current_invoices
@@ -722,6 +766,7 @@ def generate_one_bill():
 
 
 @app.route('/generate-by-order', methods=['POST'])
+@login_required
 def generate_by_order():
     """Generate PDF for specific order number or tax invoice number"""
     global current_invoices
@@ -776,6 +821,7 @@ def generate_by_order():
 
 
 @app.route('/download/<filename>')
+@login_required
 def download_file(filename):
     """Download a single PDF"""
     filepath = os.path.join(app.config['OUTPUT_FOLDER'], filename)
@@ -796,6 +842,7 @@ def download_file(filename):
 
 
 @app.route('/download-all')
+@login_required
 def download_all():
     """Download the batch-generated PDF file"""
     try:
@@ -1081,6 +1128,7 @@ def _build_sales_data(df, preset, mapping, invoice_lookup, bill_prefix, starting
 
 
 @app.route('/sales-report', methods=['POST'])
+@login_required
 def sales_report():
     """Generate sales report PDF from trimmed data"""
     global current_trimmed_df
@@ -1396,6 +1444,7 @@ def sales_report():
 
 
 @app.route('/sales-report-export', methods=['POST'])
+@login_required
 def sales_report_export():
     """Export sales report as CSV or XLSX"""
     global current_trimmed_df
@@ -1487,6 +1536,7 @@ def sales_report_export():
 
 
 @app.route('/sort-csv', methods=['POST'])
+@login_required
 def sort_csv():
     """Re-sort processed CSV in bill-generation order, grouped by invoice (original columns only)."""
     global current_invoices, current_trimmed_df
@@ -1543,6 +1593,7 @@ def sort_csv():
 
 
 @app.route('/stats')
+@login_required
 def get_stats():
     """Get current statistics"""
     global current_invoices
