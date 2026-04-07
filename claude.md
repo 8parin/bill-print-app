@@ -162,6 +162,8 @@ curl -s -X POST "https://mcp.render.com/mcp" \
 
 The Render API key is stored in the Cline MCP settings at:  
 `~/Library/Application Support/Antigravity/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+and
+.env RENDER_API_KEY = 
 
 ### Available MCP Tools
 

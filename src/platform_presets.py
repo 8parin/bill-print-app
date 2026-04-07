@@ -61,6 +61,9 @@ class PlatformPreset:
     # Fallback CSV column names for order_date when primary column is NaN (e.g. unshipped TikTok orders)
     date_fallback_columns: list = field(default_factory=list)
 
+    # Order Status values that mean the order has been shipped (exclude from pending even if date is NaN)
+    shipped_statuses: list = field(default_factory=list)
+
 
 # ---------------------------------------------------------------------------
 # Shopee
@@ -164,7 +167,7 @@ TIKTOK_PRESET = PlatformPreset(
         'order_date': 'Shipped Time',           # use Shipped Time for bill date
         'order_status': 'Order Status',
         'return_status': 'Cancelation/Return Type',
-        'shipping_buyer': 'Shipping Fee',  # customer-paid shipping fee (ค่าขนส่งที่ลูกค้าชำระ)
+        'shipping_buyer': 'Shipping Fee After Discount',  # customer-paid shipping fee (ค่าขนส่งที่ลูกค้าชำระ)
         'grand_total': 'Order Amount',
         'shopee_discount': 'SKU Seller Discount',  # reuse key for discount
         'tax_invoice': 'Order ID',  # group by order ID
@@ -180,6 +183,7 @@ TIKTOK_PRESET = PlatformPreset(
     invoice_level_fields=[],
     discount_sum_columns=['SKU Seller Discount'],  # seller discount only (not platform discount)
     date_fallback_columns=['RTS Time', 'Paid Time', 'Created Time'],  # fallback when Shipped Time is NaN
+    shipped_statuses=['จัดส่งแล้ว', 'เสร็จสมบูรณ์'],  # these orders get bills even if Shipped Time is NaN
 )
 
 # ---------------------------------------------------------------------------

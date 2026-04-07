@@ -303,7 +303,9 @@ class PDFGeneratorReportLab:
             totals_val_w = W * 0.15
 
             totals_data = [
+                ['ราคารวมสินค้าก่อนหักส่วนลด', f"{invoice.subtotal_before_discount:,.2f}"],
                 ['ส่วนลด', f"{invoice.discount:,.2f}"],
+                ['ราคารวมสินค้าหลังหักส่วนลด', f"{invoice.subtotal_after_discount:,.2f}"],
                 ['ค่าจัดส่ง', f"{invoice.shipping:,.2f}"],
                 ['รวมจํานวนเงิน', f"{invoice.grand_total:,.2f}"],
                 ['ราคาก่อนภาษีมูลค่าเพิ่ม', f"{invoice.calculate_total_before_vat():,.2f}"],
@@ -476,7 +478,9 @@ class PDFGeneratorReportLab:
             totals_val_w = W * 0.12
 
             totals_data = [
+                ['ราคารวมสินค้าก่อนหักส่วนลด', f"{invoice.subtotal_before_discount:,.2f}"],
                 ['ส่วนลด', f"{invoice.discount:,.2f}"],
+                ['ราคารวมสินค้าหลังหักส่วนลด', f"{invoice.subtotal_after_discount:,.2f}"],
                 ['ค่าจัดส่ง', f"{invoice.shipping:,.2f}"],
                 ['รวมจํานวนเงิน', f"{invoice.grand_total:,.2f}"],
                 ['ราคาก่อนภาษีมูลค่าเพิ่ม', f"{invoice.calculate_total_before_vat():,.2f}"],

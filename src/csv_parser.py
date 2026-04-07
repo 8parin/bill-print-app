@@ -543,6 +543,19 @@ class CSVParser:
         if len(pending_ids) == 0:
             return df, pd.DataFrame(columns=df.columns)
 
+        # For platforms with shipped_statuses: orders with a "shipped" status should always
+        # get a bill even if their primary date column (e.g. Shipped Time) is NaN.
+        # This covers TikTok orders with substatus "อยู่ระหว่างขนส่ง" that lack Shipped Time.
+        shipped_statuses = getattr(self.platform, 'shipped_statuses', []) if self.platform else []
+        status_col = self.column_map.get('order_status')
+        if shipped_statuses and status_col and status_col in df.columns:
+            shipped_mask = df[status_col].astype(str).str.strip().isin(shipped_statuses)
+            shipped_order_ids = set(df.loc[shipped_mask, tax_invoice_col].dropna().unique())
+            pending_ids = [oid for oid in pending_ids if oid not in shipped_order_ids]
+
+        if len(pending_ids) == 0:
+            return df, pd.DataFrame(columns=df.columns)
+
         shipped_df = df[~df[tax_invoice_col].isin(pending_ids)].copy()
         pending_df = df[df[tax_invoice_col].isin(pending_ids)].copy()
         return shipped_df, pending_df
@@ -753,6 +766,14 @@ class CSVParser:
                 pay_val = str(first_row[payment_col])
                 if pay_val not in ('nan', 'NaT', ''):
                     raw_date_val = pay_val
+        # Try platform date_fallback_columns (e.g. TikTok: RTS Time → Paid Time → Created Time)
+        if raw_date_val in ('nan', 'NaT', '') and self.platform and self.platform.date_fallback_columns:
+            for fb_col in self.platform.date_fallback_columns:
+                if fb_col in first_row.index:
+                    fb_val = str(first_row[fb_col])
+                    if fb_val not in ('nan', 'NaT', ''):
+                        raw_date_val = fb_val
+                        break
         order_date = self.format_order_date(raw_date_val)
         order_sort_key = self._parse_sort_key(raw_date_val)  # full datetime, trimmed only at display
         order_id_raw = first_row[self.column_map['order_id']] if 'order_id' in self.column_map else ''
