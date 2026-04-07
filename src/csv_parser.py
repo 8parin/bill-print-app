@@ -350,6 +350,15 @@ class CSVParser:
                 df[col] = df[col].ffill()
         return df
 
+    @staticmethod
+    def _clean_address(text: str) -> str:
+        """Remove characters that render as boxes in PDF fonts (zero-width spaces,
+        non-breaking spaces, embedded newlines from e-commerce exports)."""
+        text = text.replace('\u200b', '')   # zero-width space
+        text = text.replace('\u00a0', ' ')  # non-breaking space → regular space
+        text = text.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ')
+        return ' '.join(text.split())       # collapse multiple spaces
+
     def assemble_address(self, row) -> str:
         """Assemble address from one or more CSV columns.
 
@@ -364,11 +373,11 @@ class CSVParser:
                     val = str(row[col_name]).strip() if pd.notna(row[col_name]) else ''
                     if val and val != 'nan':
                         parts.append(val)
-            return ', '.join(parts) if parts else ''
+            return self._clean_address(', '.join(parts)) if parts else ''
         else:
             addr_col = self.column_map.get('address', '')
             if addr_col and addr_col in row.index:
-                return str(row[addr_col])
+                return self._clean_address(str(row[addr_col]))
             return ''
 
     def filter_cancelled_invoices(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
