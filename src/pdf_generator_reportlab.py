@@ -22,30 +22,25 @@ class PDFGeneratorReportLab:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         
-        # Register Tahoma font which properly supports Thai Unicode
-        # Search candidate paths for macOS and Windows
-        import sys
-        tahoma_candidates = []
-        tahoma_bold_candidates = []
-        if sys.platform == 'win32':
-            tahoma_candidates = [
-                r'C:\Windows\Fonts\tahoma.ttf',
-                r'C:\Windows\Fonts\Tahoma.ttf',
-            ]
-            tahoma_bold_candidates = [
-                r'C:\Windows\Fonts\tahomabd.ttf',
-                r'C:\Windows\Fonts\Tahomabd.ttf',
-                r'C:\Windows\Fonts\tahomabd.ttf',
-            ]
-        else:
-            tahoma_candidates = [
-                '/System/Library/Fonts/Supplemental/Tahoma.ttf',
-                '/Library/Fonts/Tahoma.ttf',
-            ]
-            tahoma_bold_candidates = [
-                '/System/Library/Fonts/Supplemental/Tahoma Bold.ttf',
-                '/Library/Fonts/Tahoma Bold.ttf',
-            ]
+        # Register Thai font for PDF generation
+        # Priority 1: bundled Sarabun font (works on all platforms including Linux/Render)
+        # Priority 2: system Tahoma (macOS/Windows)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        bundled_regular = os.path.join(base_dir, 'fonts', 'Sarabun-Regular.ttf')
+        bundled_bold = os.path.join(base_dir, 'fonts', 'Sarabun-Bold.ttf')
+
+        tahoma_candidates = [
+            '/System/Library/Fonts/Supplemental/Tahoma.ttf',
+            '/Library/Fonts/Tahoma.ttf',
+            r'C:\Windows\Fonts\tahoma.ttf',
+            r'C:\Windows\Fonts\Tahoma.ttf',
+        ]
+        tahoma_bold_candidates = [
+            '/System/Library/Fonts/Supplemental/Tahoma Bold.ttf',
+            '/Library/Fonts/Tahoma Bold.ttf',
+            r'C:\Windows\Fonts\tahomabd.ttf',
+            r'C:\Windows\Fonts\Tahomabd.ttf',
+        ]
 
         def find_font(candidates):
             for path in candidates:
@@ -53,20 +48,21 @@ class PDFGeneratorReportLab:
                     return path
             return None
 
-        tahoma_path = find_font(tahoma_candidates)
-        tahoma_bold_path = find_font(tahoma_bold_candidates)
+        if os.path.exists(bundled_regular):
+            regular_path = bundled_regular
+            bold_path = bundled_bold if os.path.exists(bundled_bold) else bundled_regular
+        else:
+            regular_path = find_font(tahoma_candidates)
+            bold_path = find_font(tahoma_bold_candidates)
 
         try:
-            if not tahoma_path:
-                raise FileNotFoundError("Tahoma regular not found")
-            pdfmetrics.registerFont(TTFont('ThaiFont', tahoma_path))
-            if tahoma_bold_path:
-                pdfmetrics.registerFont(TTFont('ThaiFont-Bold', tahoma_bold_path))
-            else:
-                pdfmetrics.registerFont(TTFont('ThaiFont-Bold', tahoma_path))
+            if not regular_path:
+                raise FileNotFoundError("No Thai font found")
+            pdfmetrics.registerFont(TTFont('ThaiFont', regular_path))
+            pdfmetrics.registerFont(TTFont('ThaiFont-Bold', bold_path or regular_path))
             self.thai_font = 'ThaiFont'
             self.thai_font_bold = 'ThaiFont-Bold'
-            print(f"Thai fonts (Tahoma) loaded: {tahoma_path}")
+            print(f"Thai font loaded: {regular_path}")
         except Exception as e:
             print(f"Font loading error: {e}")
             # Fallback to Helvetica (won't display Thai properly but won't crash)
