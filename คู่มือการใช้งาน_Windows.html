@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือการติดตั้ง – Batch Bill Print v1.5 (Windows)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Arial, "TH SarabunPSK", sans-serif;
+         background: #f5f5f5; color: #222; font-size: 15px; line-height: 1.8; }
+  .container { max-width: 760px; margin: 0 auto; padding: 32px 24px 60px; }
+
+  .cover { background: linear-gradient(135deg, #0078d4, #00b4d8);
+           color: #fff; border-radius: 12px; padding: 36px;
+           margin-bottom: 28px; text-align: center; }
+  .cover h1 { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+  .cover .sub { font-size: 14px; opacity: .9; }
+  .cover .badge { display: inline-block; background: rgba(255,255,255,.22);
+                  border-radius: 20px; padding: 3px 14px; font-size: 13px; margin-top: 10px; }
+
+  .card { background: #fff; border-radius: 10px; padding: 24px 28px;
+          margin-bottom: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+  .card h2 { font-size: 17px; color: #0078d4; margin-bottom: 14px; font-weight: 700; }
+
+  .step { display: flex; gap: 14px; margin-bottom: 20px; align-items: flex-start; }
+  .step-num { min-width: 28px; height: 28px; background: #0078d4; color: #fff;
+              border-radius: 50%; display: flex; align-items: center; justify-content: center;
+              font-weight: 700; font-size: 13px; flex-shrink: 0; margin-top: 3px; }
+  .step-body { flex: 1; }
+  .step-body p { margin-bottom: 8px; }
+
+  .code-wrap { position: relative; margin: 8px 0; }
+  .code { background: #1a1a2e; color: #e8e8e8; border-radius: 8px;
+          padding: 14px 18px; font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+          font-size: 14px; overflow-x: auto; white-space: pre; line-height: 1.6; }
+  .copy-btn { position: absolute; top: 8px; right: 10px;
+              background: #0078d4; color: #fff; border: none; border-radius: 5px;
+              padding: 3px 10px; font-size: 12px; cursor: pointer; opacity: .85; }
+  .copy-btn:hover { opacity: 1; }
+  .copy-btn.copied { background: #28a745; }
+
+  .note { border-left: 4px solid #0078d4; background: #f0f7ff;
+          padding: 9px 13px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 13.5px; }
+  .warn { border-left: 4px solid #e53e3e; background: #fff5f5;
+          padding: 9px 13px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 13.5px; }
+  .tip  { border-left: 4px solid #28a745; background: #f0fff4;
+          padding: 9px 13px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 13.5px; }
+
+  .footer { text-align: center; color: #aaa; font-size: 12px; margin-top: 36px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  th { background: #0078d4; color: #fff; padding: 7px 12px; text-align: left; }
+  td { padding: 7px 12px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #fafafa; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="cover">
+    <div class="badge">🪟 Windows</div>
+    <h1>📄 Batch Bill Print v1.5</h1>
+    <div class="sub">ระบบพิมพ์บิล Shopee / Lazada / TikTok Shop</div>
+    <div class="badge">อัปเดต กุมภาพันธ์ 2026</div>
+  </div>
+
+  <!-- Step 1: Open CMD -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 1 — เปิด Command Prompt</h2>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <p>กด <strong>Win + R</strong> แล้วพิมพ์ <code>cmd</code> แล้วกด Enter</p>
+        <p><em>(หรือกด Start แล้วค้นหา "Command Prompt")</em></p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <p>ใช้คำสั่ง <code>cd</code> เพื่อเข้าโฟลเดอร์ที่แตกไฟล์ไว้ เช่น:</p>
+        <div class="code-wrap">
+          <pre class="code">cd C:\Users\ชื่อของคุณ\Documents\Batch_Bill_Print_v1.5_windows</pre>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <div class="note">💡 เปลี่ยน <strong>ชื่อของคุณ</strong> เป็นชื่อ User บนเครื่อง และเปลี่ยน path ให้ตรงกับที่แตกไฟล์</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Check Python -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 2 — ตรวจสอบ Python</h2>
+    <p style="margin-bottom:10px;">คัดลอกคำสั่งนี้วางใน Command Prompt แล้ว Enter:</p>
+    <div class="code-wrap">
+      <pre class="code">python --version</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <div class="tip">✅ ถ้าเห็น <strong>Python 3.x.x</strong> ข้ามไปขั้นตอนที่ 3 ได้เลย</div>
+    <div class="warn">❌ ถ้าขึ้น "'python' is not recognized" แสดงว่ายังไม่ได้ติดตั้ง Python</div>
+    <p style="margin-top:10px;">ให้ดาวน์โหลด Python จาก <strong>https://www.python.org/downloads/</strong><br>
+    ระหว่างติดตั้ง <strong>ต้องเช็กกล่อง "Add Python to PATH"</strong> ด้วย แล้วกลับมารันคำสั่งข้างบนอีกครั้ง</p>
+  </div>
+
+  <!-- Step 3: Install -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 3 — ติดตั้งโปรแกรม (ครั้งแรกครั้งเดียว)</h2>
+    <p style="margin-bottom:10px;">คัดลอกคำสั่งนี้วางใน Command Prompt แล้ว Enter:</p>
+    <div class="code-wrap">
+      <pre class="code">install.bat</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <p style="margin-top:10px;">รอประมาณ <strong>2-5 นาที</strong> จนเห็น <strong>"[OK] Installation Complete!"</strong></p>
+
+    <div class="warn" style="margin-top:12px;">⚠️ ถ้าติดตั้งไม่ผ่าน ให้ลองรันคำสั่งนี้แทน:</div>
+    <div class="code-wrap">
+      <pre class="code">python -m pip install -r requirements.txt</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Run -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 4 — เปิดโปรแกรม</h2>
+    <p style="margin-bottom:10px;"><strong>วิธีที่ 1 (ง่ายที่สุด)</strong> — ดับเบิ้ลคลิกไฟล์ <strong>BatchBill.bat</strong> บน Desktop</p>
+    <p style="margin-bottom:10px;"><strong>วิธีที่ 2</strong> — รันใน Command Prompt:</p>
+    <div class="code-wrap">
+      <pre class="code">run.bat</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <p style="margin-top:10px;">แล้วเปิดเบราว์เซอร์ไปที่:</p>
+    <div class="code-wrap">
+      <pre class="code">http://localhost:5003</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <div class="note" style="margin-top:12px;">💡 ปิดโปรแกรม: กด <strong>Ctrl + C</strong> ใน Command Prompt</div>
+  </div>
+
+  <!-- Troubleshooting -->
+  <div class="card">
+    <h2>🛠️ แก้ปัญหาเบื้องต้น</h2>
+    <table>
+      <tr><th>ปัญหา</th><th>วิธีแก้</th></tr>
+      <tr><td>"python is not recognized"</td><td>ติดตั้ง Python ใหม่ และเช็กกล่อง <strong>"Add Python to PATH"</strong></td></tr>
+      <tr><td>Port 5003 ถูกใช้อยู่</td><td>ปิดหน้าต่าง CMD ที่รันอยู่ แล้วเปิดใหม่</td></tr>
+      <tr><td>ติดตั้งไม่ผ่าน (Error)</td><td>เปิด CMD แบบ "Run as Administrator" แล้วรัน <code>install.bat</code> ใหม่</td></tr>
+      <tr><td>เว็บไม่เปิด</td><td>เปิด Chrome/Edge แล้วพิมพ์ <code>http://localhost:5003</code></td></tr>
+    </table>
+  </div>
+
+  <div class="footer">
+    Batch Bill Print v1.5 &nbsp;|&nbsp; Windows &nbsp;|&nbsp; กุมภาพันธ์ 2026
+  </div>
+
+</div>
+
+<script>
+function copyCode(btn) {
+  const code = btn.previousElementSibling.textContent.trim();
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+</script>
+</body>
+</html>

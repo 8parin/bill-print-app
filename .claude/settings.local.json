@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(fc-list:*)",
+      "Bash(\"/Users/parin/Library/Mobile Documents/com~apple~CloudDocs/VS_Code/Bill_Print/.venv/bin/python3\" -c \"\nfrom reportlab.pdfbase.ttfonts import TTFont\nfont = TTFont\\(''Test'', ''/System/Library/Fonts/Supplemental/Tahoma.ttf''\\)\nprint\\(''Tahoma loaded OK''\\)\nfont2 = TTFont\\(''Test2'', ''/System/Library/Fonts/Supplemental/Tahoma Bold.ttf''\\)\nprint\\(''Tahoma Bold loaded OK''\\)\n\")",
+      "Bash(\"/Users/parin/Library/Mobile Documents/com~apple~CloudDocs/VS_Code/Bill_Print/.venv/bin/python3.9\" -c \"\nfrom reportlab.pdfbase.ttfonts import TTFont\nfont = TTFont\\(''Test'', ''/System/Library/Fonts/Supplemental/Tahoma.ttf''\\)\nprint\\(''Tahoma loaded OK''\\)\nfont2 = TTFont\\(''TestB'', ''/System/Library/Fonts/Supplemental/Tahoma Bold.ttf''\\)\nprint\\(''Tahoma Bold loaded OK''\\)\n\")",
+      "Bash(\"/Users/parin/Library/Mobile Documents/com~apple~CloudDocs/VS_Code/Bill_Print/.venv/bin/python3.9\" -m pip list)",
+      "Bash(/usr/bin/python3:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(curl:*)",
+      "Bash(open:*)",
+      "Bash(zip:*)",
+      "Bash(unzip:*)",
+      "Bash(ls:*)",
+      "Bash(python3.12:*)",
+      "Bash(python3.11:*)",
+      "Bash(pip3 list:*)",
+      "Read(//usr/local/**)",
+      "Bash(/opt/homebrew/bin/python3:*)",
+      "Bash(python3:*)",
+      "Bash(file:*)",
+      "Bash(\"/Users/parin/Library/Mobile Documents/com~apple~CloudDocs/VS_Code/Bill_Print/.venv/bin/python3\" -c \"import flask; print\\(''Flask OK''\\)\")",
+      "Bash(\"/Users/parin/Library/Mobile Documents/com~apple~CloudDocs/VS_Code/Bill_Print/.venv/bin/pip\" list)",
+      "Bash(\"/Users/parin/Library/Mobile Documents/com~apple~CloudDocs/VS_Code/Bill_Print/.venv/bin/pip\" install -r \"/Users/parin/Library/Mobile Documents/com~apple~CloudDocs/VS_Code/Bill_Print/requirements.txt\")",
+      "Bash(kill:*)",
+      "Bash(.venv/bin/python:*)"
+    ]
+  }
+}

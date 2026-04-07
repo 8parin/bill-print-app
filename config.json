@@ -1,0 +1,35 @@
+{
+  "company": {
+    "name": "บริษัท จตุรโชค จํากัด (สํานักงานใหญ่)",
+    "tax_id": "0 1055 56157 13 7",
+    "address": "162/36 ถ.สุขสวัสดิ์ แขวงราษฏร์บูรณะ เขตราษฎร์บูรณะ กรุงเทพฯ 10140",
+    "phone": "0988387810, 0989088996",
+    "branch_code": "500425",
+    "branch_address": "ทรา 109, ตึก B วางไว้ข้างล่างตึก B แขวงมีนบุรี เขตมีนบุรี จังหวัดกรุงเทพมหานคร 10510"
+  },
+  "settings": {
+    "output_folder": "./output/bills",
+    "upload_folder": "./uploads",
+    "vat_rate": 0.07,
+    "paper_size": "A4",
+    "mask_customer_data": false
+  },
+  "column_mapping": {
+    "address": "ที่อยู่ในการจัดส่ง",
+    "grand_total": "จำนวนเงินทั้งหมด",
+    "order_date": "เวลาส่งสินค้า",
+    "order_id": "หมายเลขคำสั่งซื้อ",
+    "phone": "หมายเลขโทรศัพท์",
+    "product_name": "ชื่อสินค้า",
+    "quantity": "จำนวน",
+    "recipient_name": "ชื่อผู้รับ",
+    "sale_price": "ราคาขาย",
+    "service_fee": "ค่าบริการ",
+    "shipping_buyer": "ค่าจัดส่งที่ชำระโดยผู้ซื้อ",
+    "shopee_discount": "โค้ดส่วนลดชำระโดยผู้ขาย",
+    "tax_invoice": "หมายเลขคำสั่งซื้อ",
+    "total": "ราคาขายสุทธิ",
+    "tracking_number": "*หมายเลขติดตามพัสดุ",
+    "variant": "ชื่อตัวเลือก"
+  }
+}

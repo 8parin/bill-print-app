@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือการติดตั้ง – Batch Bill Print v1.5 (Mac)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Arial, "Thonburi", sans-serif;
+         background: #f5f5f5; color: #222; font-size: 15px; line-height: 1.8; }
+  .container { max-width: 760px; margin: 0 auto; padding: 32px 24px 60px; }
+
+  .cover { background: linear-gradient(135deg, #ff6900, #ff9a3c);
+           color: #fff; border-radius: 12px; padding: 36px;
+           margin-bottom: 28px; text-align: center; }
+  .cover h1 { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+  .cover .sub { font-size: 14px; opacity: .9; }
+  .cover .badge { display: inline-block; background: rgba(255,255,255,.22);
+                  border-radius: 20px; padding: 3px 14px; font-size: 13px; margin-top: 10px; }
+
+  .card { background: #fff; border-radius: 10px; padding: 24px 28px;
+          margin-bottom: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+  .card h2 { font-size: 17px; color: #ff6900; margin-bottom: 14px; font-weight: 700; }
+
+  /* Step row */
+  .step { display: flex; gap: 14px; margin-bottom: 20px; align-items: flex-start; }
+  .step-num { min-width: 28px; height: 28px; background: #ff6900; color: #fff;
+              border-radius: 50%; display: flex; align-items: center; justify-content: center;
+              font-weight: 700; font-size: 13px; flex-shrink: 0; margin-top: 3px; }
+  .step-body { flex: 1; }
+  .step-body p { margin-bottom: 8px; }
+
+  /* Code block with copy button */
+  .code-wrap { position: relative; margin: 8px 0; }
+  .code { background: #1a1a2e; color: #e8e8e8; border-radius: 8px;
+          padding: 14px 18px; font-family: "SF Mono", "Menlo", "Courier New", monospace;
+          font-size: 14px; overflow-x: auto; white-space: pre; line-height: 1.6; }
+  .copy-btn { position: absolute; top: 8px; right: 10px;
+              background: #ff6900; color: #fff; border: none; border-radius: 5px;
+              padding: 3px 10px; font-size: 12px; cursor: pointer; opacity: .85; }
+  .copy-btn:hover { opacity: 1; }
+  .copy-btn.copied { background: #28a745; }
+
+  .note { border-left: 4px solid #ff6900; background: #fff8f0;
+          padding: 9px 13px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 13.5px; }
+  .warn { border-left: 4px solid #e53e3e; background: #fff5f5;
+          padding: 9px 13px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 13.5px; }
+  .tip  { border-left: 4px solid #28a745; background: #f0fff4;
+          padding: 9px 13px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 13.5px; }
+
+  .footer { text-align: center; color: #aaa; font-size: 12px; margin-top: 36px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  th { background: #ff6900; color: #fff; padding: 7px 12px; text-align: left; }
+  td { padding: 7px 12px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #fafafa; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="cover">
+    <div class="badge">🍎 macOS</div>
+    <h1>📄 Batch Bill Print v1.5</h1>
+    <div class="sub">ระบบพิมพ์บิล Shopee / Lazada / TikTok Shop</div>
+    <div class="badge">อัปเดต กุมภาพันธ์ 2026</div>
+  </div>
+
+  <!-- Step 1: Open Terminal -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 1 — เปิด Terminal</h2>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <p>กด <strong>Cmd + Space</strong> แล้วพิมพ์ <strong>Terminal</strong> แล้วกด Enter</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <p>ลากโฟลเดอร์ <strong>Batch_Bill_Print_v1.5_mac</strong> จาก Finder มาวางใน Terminal แล้วกด Enter<br>
+        <em>(หรือพิมพ์ <code>cd </code> แล้วลากโฟลเดอร์ใส่)</em></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Check Python -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 2 — ตรวจสอบ Python</h2>
+    <p style="margin-bottom:10px;">คัดลอกคำสั่งนี้วางใน Terminal แล้ว Enter:</p>
+    <div class="code-wrap">
+      <pre class="code">python3 --version</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <div class="tip">✅ ถ้าเห็น <strong>Python 3.x.x</strong> ข้ามไปขั้นตอนที่ 3 ได้เลย</div>
+    <div class="warn">❌ ถ้าขึ้น "command not found" ให้ติดตั้ง Python ก่อน:</div>
+    <div class="code-wrap">
+      <pre class="code">brew install python3</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <div class="note">💡 ถ้าไม่มี Homebrew ให้ดาวน์โหลด Python จาก <strong>https://www.python.org/downloads/</strong> แทน</div>
+  </div>
+
+  <!-- Step 3: Install -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 3 — ติดตั้งโปรแกรม (ครั้งแรกครั้งเดียว)</h2>
+    <p style="margin-bottom:10px;">คัดลอกคำสั่งนี้วางใน Terminal แล้ว Enter:</p>
+    <div class="code-wrap">
+      <pre class="code">./install.sh</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <p style="margin-top:10px;">รอประมาณ <strong>2-5 นาที</strong> จนเห็น <strong>"✅ Installation Complete!"</strong></p>
+
+    <div class="warn" style="margin-top:12px;">⚠️ ถ้าขึ้น "Permission denied" ให้รันคำสั่งนี้ก่อน:</div>
+    <div class="code-wrap">
+      <pre class="code">chmod +x install.sh run.sh</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <p style="margin-top:8px;">แล้วรัน <code>./install.sh</code> อีกครั้ง</p>
+  </div>
+
+  <!-- Step 4: Run -->
+  <div class="card">
+    <h2>ขั้นตอนที่ 4 — เปิดโปรแกรม</h2>
+    <p style="margin-bottom:10px;"><strong>วิธีที่ 1 (ง่ายที่สุด)</strong> — ดับเบิ้ลคลิกไอคอน <strong>BatchBill.command</strong> บน Desktop</p>
+    <p style="margin-bottom:10px;"><strong>วิธีที่ 2</strong> — รันใน Terminal:</p>
+    <div class="code-wrap">
+      <pre class="code">./run.sh</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <p style="margin-top:10px;">แล้วเปิดเบราว์เซอร์ไปที่:</p>
+    <div class="code-wrap">
+      <pre class="code">http://localhost:5003</pre>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <div class="note" style="margin-top:12px;">💡 ปิดโปรแกรม: กด <strong>Ctrl + C</strong> ใน Terminal</div>
+  </div>
+
+  <!-- Troubleshooting -->
+  <div class="card">
+    <h2>🛠️ แก้ปัญหาเบื้องต้น</h2>
+    <table>
+      <tr><th>ปัญหา</th><th>คำสั่งแก้ไข</th></tr>
+      <tr><td>Permission denied</td><td><code>chmod +x install.sh run.sh</code></td></tr>
+      <tr><td>Port 5003 ถูกใช้อยู่</td><td><code>kill $(lsof -ti:5003)</code></td></tr>
+      <tr><td>ติดตั้ง dependencies ไม่ผ่าน</td><td><code>pip3 install -r requirements.txt</code></td></tr>
+    </table>
+  </div>
+
+  <div class="footer">
+    Batch Bill Print v1.5 &nbsp;|&nbsp; macOS &nbsp;|&nbsp; กุมภาพันธ์ 2026
+  </div>
+
+</div>
+
+<script>
+function copyCode(btn) {
+  const code = btn.previousElementSibling.textContent.trim();
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+</script>
+</body>
+</html>

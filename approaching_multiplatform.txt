@@ -1,0 +1,75 @@
+
+1. Multi-platform CSV (Shopee / Lazada / TikTok Shop)
+Recommended approach: Platform presets + auto-detection
+
+The current architecture already has a flexible column mapping system. Build on it:
+
+Add platform presets — each platform (Shopee, Lazada, TikTok) gets its own default COLUMN_MAP with the correct Thai column names. User picks the platform on upload (or it auto-detects based on distinctive column names).
+Auto-detection — each platform has unique columns. For example, Shopee has หมายเลขคำสั่งซื้อ, Lazada likely has different column names. Check the first row and match against known patterns.
+Shared pipeline — after mapping, everything flows through the same Invoice data model. The parser normalizes platform-specific data into the common structure. Bill generation, printing, and sales report stay untouched.
+Cancelled/return status — each platform uses different status values and column names. The preset would include platform-specific CANCELLED_STATUSES and CONFIRMED_RETURN_STATUSES.
+Manual mapping fallback — the existing column mapping UI already handles unknown formats. If auto-detection fails, user maps manually.
+This is clean because the only platform-specific code lives in the parser layer. Everything downstream is platform-agnostic.
+
+2. Deployment: Local ZIP vs Remote Server
+Recommended: Stay with local ZIP, but add Windows support
+
+Local ZIP	Remote Server
+Privacy	Data stays on machine	Sensitive order data over internet
+Setup	One-time install	Needs hosting, domain, SSL
+Cost	Free	Monthly server cost
+Reliability	Works offline	Depends on internet
+Multi-user	One user at a time	Multiple users
+For your use case (bill printing from CSV exports), local ZIP is better because:
+
+Order data is sensitive (customer names, addresses, phone numbers)
+No ongoing hosting costs
+Works without internet
+Simpler to maintain
+For Windows support, you'd need:
+
+install.bat and run.bat (equivalents of the .sh scripts)
+Fix the Thai font path (macOS: /System/Library/Fonts/.../Tahoma.ttf, Windows: C:\Windows\Fonts\tahoma.ttf) — add OS detection
+The rest (Python, Flask, ReportLab, pandas) is already cross-platform
+The ZIP would contain both .sh and .bat scripts. The user runs whichever matches their OS.
+
+Want me to proceed with implementing either of these? If so, I'd suggest starting with platform presets (Lazada/TikTok support) since that adds immediate business value — if you can share a sample Lazada or TikTok CSV header row, I can set up the presets.
+
+Claude’s Plan
+Plan: Sales Report Tab
+Context
+User wants a new "Sales Report" tab (tab 4) that generates a downloadable PDF report from trimmed data (after cancelled/returned orders are removed). The report has two sections: a detailed sales table and a summary table.
+
+Changes
+1. Backend: New route in app.py
+POST /sales-report — generates a PDF sales report from the trimmed DataFrame (stored after return decisions are applied)
+Store the trimmed DataFrame globally (like current_invoices) so the report route can use it
+Extract "Model" from product name using regex: รุ่น\s+(\S+) from ชื่อสินค้า
+Build report data:
+Sales Table columns: หมายเลขคำสั่งซื้อ, Model, ราคาขาย, จำนวน, ค่าจัดส่งที่ชำระโดยผู้ซื้อ, ค่าบริการ, จำนวนเงินทั้งหมด, ค่าจัดส่งโดยประมาณ
+Invoice-level columns (ค่าจัดส่ง, ค่าบริการ, จำนวนเงินทั้งหมด, ค่าจัดส่งโดยประมาณ) show on first row of each order only
+Summary Table: count of unique orders, sum of จำนวน, ค่าจัดส่งที่ชำระโดยผู้ซื้อ, ค่าบริการ, จำนวนเงินทั้งหมด, ค่าจัดส่งโดยประมาณ
+Generate PDF using ReportLab (already a dependency) with Thai font support
+Return PDF as downloadable file
+2. Frontend: New tab in templates/index.html
+Add tab button: 📈 4. Sales Report (disabled until invoices are loaded)
+Tab content: simple section with a "Generate Sales Report (PDF)" button
+Enable this tab when printing tab is enabled (invoices are ready)
+3. Frontend JS in static/js/app.js
+Add click handler for the sales report button → POST /sales-report → trigger PDF download
+Enable salesReportTab alongside printingTab
+4. Store trimmed DataFrame globally in app.py
+Add current_trimmed_df = None global
+Set it in both /save-mapping and /apply-return-decisions routes after filtering
+Key Files
+app.py — new route + store trimmed df
+templates/index.html — new tab
+static/js/app.js — button handler
+src/csv_parser.py — column map reference (read-only)
+Verification
+Upload a CSV with cancelled/returned orders
+Go through mapping → return decisions
+Click tab 4 → "Generate Sales Report"
+Verify PDF downloads with correct sales table + summary
+Verify invoice-level columns appear only on first row per order
+Verify Model is extracted correctly from product names

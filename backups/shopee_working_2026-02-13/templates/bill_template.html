@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ใบกำกับภาษี - {{ invoice.invoice_number }}</title>
+
+    <!-- Google Fonts for Thai support - Noto Sans Thai -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bill.css') }}">
+</head>
+
+<body>
+    <div class="bill-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-row">
+                <div class="company-info">
+                    <h1>{{ company.name }}</h1>
+                    <p>{{ company.address|replace(' เขต', '<br />เขต')|safe }}</p>
+                    <p>โทรศัพท์ {{ company.phone }}</p>
+                </div>
+                <div class="bill-title">
+                    <h2>ใบกํากับภาษี(อย่างย่อ)<br />ใบส่งสินค้า /ใบเสร็จรับเงิน</h2>
+                    <p>เลขประจําตัวผู้เสียภาษี {{ company.tax_id }}</p>
+                    <p>(เอกสารออกเป็นชุด)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer and Order Info -->
+        <div class="info-section">
+            <div class="customer-info">
+                <p><strong>ลูกค้า</strong> {{ invoice.customer.name }}</p>
+                <p><strong>ที่อยู่</strong> {{ invoice.customer.address }}</p>
+                <p><strong>โทรศัพท์</strong> {{ invoice.customer.phone }}</p>
+            </div>
+            <div class="order-info">
+                <p><strong>วันที่</strong> {{ invoice.order_date }}</p>
+                <p><strong>เลขที่ใบสั่งซื้อ</strong> {{ invoice.order_id }}</p>
+                <p><strong>เลขที่บิล</strong> {{ invoice.bill_number }}</p>
+            </div>
+        </div>
+
+        <!-- Items Table -->
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th class="col-num">ลําดับ</th>
+                    <th class="col-desc">รายละเอียดสินค้า</th>
+                    <th class="col-qty">จํานวน</th>
+                    <th class="col-price">ราคา/หน่วย</th>
+                    <th class="col-total">จํานวนเงิน</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice.items %}
+                <tr>
+                    <td class="text-center">{{ loop.index }}</td>
+                    <td>{{ item.description }}</td>
+                    <td class="text-center">{{ "%.2f"|format(item.quantity) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(item.unit_price) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(item.total) }}</td>
+                </tr>
+                {% endfor %}
+
+                <!-- Empty rows for spacing if needed -->
+                {% for i in range(5 - invoice.items|length) %}
+                {% if i >= 0 %}
+                <tr class="empty-row">
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Totals Section -->
+        <div class="totals-section">
+            <div class="totals-left">
+            </div>
+            <div class="totals-right">
+                <table class="totals-table">
+                    <tr>
+                        <td>ส่วนลด</td>
+                        <td class="text-right">{{ "%.2f"|format(invoice.discount) }}</td>
+                    </tr>
+                    <tr>
+                        <td>ค่าจัดส่ง</td>
+                        <td class="text-right">{{ "%.2f"|format(invoice.shipping) }}</td>
+                    </tr>
+                    <tr class="grand-total">
+                        <td><strong>รวมจํานวนเงิน</strong></td>
+                        <td class="text-right"><strong>{{ "%.2f"|format(invoice.calculate_grand_total()) }}</strong>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>ราคาก่อนภาษีมูลค่าเพิ่ม</td>
+                        <td class="text-right">{{ "%.2f"|format(invoice.calculate_total_before_vat()) }}</td>
+                    </tr>
+                    <tr>
+                        <td>ภาษีมูลค่าเพิ่ม {{ "%.0f"|format(invoice.vat_rate * 100) }}%</td>
+                        <td class="text-right">{{ "%.2f"|format(invoice.calculate_vat()) }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Signature Section -->
+        <div class="signatures">
+            <div class="signature-box">
+                <p>ผู้จัดทํา</p>
+                <div class="signature-line"></div>
+            </div>
+            <div class="signature-box">
+                <p>ผู้รับสินค้า</p>
+                <div class="signature-line"></div>
+                <p class="tracking-label">Tracking: {{ invoice.tracking_number }}</p>
+            </div>
+            <div class="signature-box">
+                <p>ผู้รับเงิน</p>
+                <div class="signature-line"></div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

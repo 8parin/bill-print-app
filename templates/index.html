@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Bill Printing</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🧾 Batch Bill Printing</h1>
+            <p>Generate tax invoices from e-commerce CSV exports</p>
+        </header>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="upload">📤 1. Setup & Import</button>
+            <button class="tab-btn" data-tab="mapping" id="mappingTab" disabled>📊 2. Verify Columns</button>
+            <button class="tab-btn" data-tab="printing" id="printingTab" disabled>🖨️ 3. Printing</button>
+            <button class="tab-btn" data-tab="salesreport" id="salesReportTab" disabled>📈 4. Sales Report</button>
+            <button class="tab-btn" data-tab="sortcsv" id="sortCsvTab" disabled>📋 5. Sort CSV</button>
+        </div>
+
+        <!-- Tab 1: Setup & Upload -->
+        <div class="tab-content active" id="upload">
+            <!-- Company Info Editable -->
+            <div class="section-group">
+                <h3>Company Info (ข้อมูลบริษัท)</h3>
+                <div class="setting-row">
+                    <label for="companyName">Company Name:</label>
+                    <input type="text" id="companyName" class="form-input" value="{{ company.name }}">
+                </div>
+                <div class="setting-row">
+                    <label for="companyTaxId">Tax ID:</label>
+                    <input type="text" id="companyTaxId" class="form-input" value="{{ company.tax_id }}">
+                </div>
+                <div class="setting-row">
+                    <label for="companyAddress">Address:</label>
+                    <input type="text" id="companyAddress" class="form-input" value="{{ company.address }}">
+                </div>
+                <div class="setting-row">
+                    <label for="companyPhone">Phone:</label>
+                    <input type="text" id="companyPhone" class="form-input" value="{{ company.phone }}">
+                </div>
+                <button id="saveCompanyBtn" class="btn btn-primary">
+                    Save Company Info
+                </button>
+                <div id="companyStatus" class="status-message"></div>
+            </div>
+
+            <!-- Starting Bill Number -->
+            <div class="section-group">
+                <h3>Bill Number (เลขที่บิล)</h3>
+                <div class="setting-row">
+                    <label for="startingBillNumber">Starting Bill #:</label>
+                    <input type="text" id="startingBillNumber" class="bill-number-input" value="2600001"
+                        placeholder="2600001 or LZ26000015">
+                    <small style="color: #666; margin-left: 10px;">Supports prefix: LZ, TT, etc.</small>
+                </div>
+            </div>
+
+            <!-- Platform Selection -->
+            <div class="section-group">
+                <h3>Platform (แพลตฟอร์ม)</h3>
+                <div class="setting-row">
+                    <label for="platformSelect">Select Platform:</label>
+                    <select id="platformSelect" class="form-input">
+                        <option value="shopee">Shopee</option>
+                        <option value="lazada">Lazada</option>
+                        <option value="tiktok">TikTok Shop</option>
+                    </select>
+                    <span id="platformDetected" class="status-badge" style="display:none; margin-left: 10px;"></span>
+                </div>
+            </div>
+
+            <!-- CSV Upload -->
+            <div class="section-group">
+                <h3>Import CSV File</h3>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="csvFile" accept=".csv" style="display: none;">
+                    <div class="upload-placeholder">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Click to upload or drag and drop CSV file</p>
+                        <small>Supports Shopee, Lazada, TikTok Shop CSV formats</small>
+                    </div>
+                </div>
+                <div id="uploadStatus" class="status-message"></div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Column Mapping -->
+        <div class="tab-content" id="mapping">
+            <h2>Verify Column Mapping</h2>
+            <p class="info-text">Map CSV columns to bill fields. Required fields are marked with *</p>
+
+            <div id="mappingGrid" class="mapping-grid">
+                <!-- Will be populated by JavaScript -->
+            </div>
+
+            <button id="saveMappingBtn" class="btn btn-primary">
+                ✅ Save Mapping & Continue
+            </button>
+            <div id="mappingStatus" class="status-message"></div>
+        </div>
+
+        <!-- Tab 3: Printing -->
+        <div class="tab-content" id="printing">
+            <h2>Generate Bills</h2>
+
+            <div id="invoiceCount" class="info-box"></div>
+
+            <!-- Preview First Bill-->
+            <div class="section-group">
+                <h3>Preview</h3>
+                <button id="previewBtn" class="btn btn-secondary">
+                    👁️ Preview First Bill
+                </button>
+            </div>
+
+            <!-- Generate by Order Number -->
+            <div class="section-group">
+                <h3>Generate Single Bill</h3>
+                <div class="order-input-section">
+                    <label for="orderNumberInput" class="order-label">
+                        Order Number (หมายเลขคำสั่งซื้อ):
+                    </label>
+                    <div class="order-input-group">
+                        <input type="text" id="orderNumberInput" class="order-input"
+                            placeholder="Enter order number...">
+                        <button id="previewByOrderBtn" class="btn btn-secondary">
+                            👁️ Preview
+                        </button>
+                        <button id="generateByOrderBtn" class="btn btn-success">
+                            📄 Generate PDF
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider">OR</div>
+
+            <!-- Batch Generation -->
+            <div class="section-group">
+                <h3>Batch Generation</h3>
+
+                <!-- Paper Size Selector -->
+                <div class="setting-row">
+                    <label for="paperSize">Paper Size:</label>
+                    <select id="paperSize" class="paper-size-select">
+                        <option value="A5" selected>A5 (148mm × 210mm)</option>
+                        <option value="A4">A4 (210mm × 297mm)</option>
+                        <option value="Letter">Letter (8.5" × 11")</option>
+                    </select>
+                </div>
+
+                <!-- Paper Orientation Selector -->
+                <div class="setting-row">
+                    <label for="orientation">Orientation:</label>
+                    <select id="orientation" class="paper-size-select">
+                        <option value="portrait" selected>Portrait (↕)</option>
+                        <option value="landscape">Landscape (↔)</option>
+                    </select>
+                </div>
+
+                <div class="button-group">
+                    <button id="generateOneBtn" class="btn btn-info">
+                        📄 Generate First Bill (Test)
+                    </button>
+                    <button id="generateBtn" class="btn btn-primary">
+                        ⚡ Generate All Bills
+                    </button>
+                </div>
+                <div id="progress" class="progress-bar" style="display: none;">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <div id="generateStatus" class="status-message"></div>
+            </div>
+
+            <!-- Download Section -->
+            <div class="section-group" id="downloadSection" style="display: none;">
+                <h3>Download</h3>
+                <button id="downloadBtn" class="btn btn-success">
+                    📥 Download PDFs
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab 5: Sort CSV -->
+        <div class="tab-content" id="sortcsv">
+            <h2>Sort CSV (เรียงลำดับ CSV ตามลำดับบิล)</h2>
+            <div class="info-box">
+                <p>Export a copy of the processed CSV re-sorted in <strong>bill generation order</strong>.</p>
+                <p>Multi-item invoices are kept together. All original columns are preserved as-is.</p>
+            </div>
+            <div class="section-group">
+                <button id="sortCsvBtn" class="btn btn-primary">
+                    📗 Download Sorted Excel (.xlsx)
+                </button>
+                <div id="sortCsvStatus" class="status-message"></div>
+            </div>
+        </div>
+
+        <!-- Tab 4: Sales Report -->
+        <div class="tab-content" id="salesreport">
+            <h2>Sales Report (รายงานยอดขาย)</h2>
+            <div class="info-box">
+                <p>Generate a sales report PDF from the processed data (after cancelled and returned orders are removed).</p>
+                <p>The report includes a detailed sales table and a summary with totals.</p>
+            </div>
+            <div class="section-group">
+                <button id="generateSalesReportBtn" class="btn btn-primary">
+                    📈 Generate Sales Report (PDF)
+                </button>
+                <button id="exportSalesReportCsvBtn" class="btn btn-secondary">
+                    📊 Export CSV
+                </button>
+                <button id="exportSalesReportXlsxBtn" class="btn btn-secondary">
+                    📗 Export Excel (.xlsx)
+                </button>
+                <div id="salesReportStatus" class="status-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Modal for Format Changes -->
+    <div id="notificationModal" class="modal notification-modal">
+        <div class="modal-content notification-content">
+            <span class="close notification-close">&times;</span>
+            <div id="notificationIcon" class="notification-icon">⚠️</div>
+            <h2 id="notificationTitle">Notification</h2>
+            <div id="notificationMessage" class="notification-message"></div>
+            <div id="notificationDetails" class="notification-details"></div>
+            <div class="notification-actions">
+                <button id="notificationBtn" class="btn btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Return Review Modal -->
+    <div id="returnReviewModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <span class="close" id="returnReviewClose">&times;</span>
+            <h2>📦 Return/Refund Items Review</h2>
+            <p class="info-text">The following items have return/refund statuses. Please choose how to handle each.</p>
+
+            <!-- Global policy for confirmed returns -->
+            <div class="section-group" style="background: #fff3cd; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                <strong>Default action for confirmed returns (คำขอได้รับการยอมรับแล้ว):</strong>
+                <div style="margin-top: 8px; display: flex; gap: 16px;">
+                    <label style="cursor: pointer;">
+                        <input type="radio" name="returnPolicy" value="remove_product" checked>
+                        Remove only that product row
+                    </label>
+                    <label style="cursor: pointer;">
+                        <input type="radio" name="returnPolicy" value="remove_bill">
+                        Cancel entire bill
+                    </label>
+                </div>
+            </div>
+
+            <div id="returnItemsList" style="max-height: 400px; overflow-y: auto;"></div>
+
+            <div class="notification-actions" style="margin-top: 16px;">
+                <button id="applyReturnDecisions" class="btn btn-primary">
+                    Apply Decisions & Continue
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Bill Preview</h2>
+            <iframe id="previewFrame" style="width: 100%; height: 80vh; border: 1px solid #ccc;"></iframe>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+
+</html>
