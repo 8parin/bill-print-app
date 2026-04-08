@@ -97,9 +97,20 @@ class CSVParser:
         # Strip whitespace and BOM from column names
         df.columns = [col.strip().lstrip('\ufeff') for col in df.columns]
 
-        # Platform-specific: skip metadata rows (e.g. TikTok row 2)
+        # Platform-specific: skip metadata/description rows (e.g. TikTok row 2)
+        # Only skip row 0 if it looks like a description row (non-numeric Order ID),
+        # since newer TikTok exports omit the description row.
         if self.platform and self.platform.skip_rows:
-            rows_to_skip = [i for i in self.platform.skip_rows if i < len(df)]
+            order_col = self.column_map.get('order_id', '')
+            rows_to_skip = []
+            for i in self.platform.skip_rows:
+                if i >= len(df):
+                    continue
+                if i == 0 and order_col and order_col in df.columns:
+                    val = str(df.at[i, order_col]).strip()
+                    if val.isdigit():
+                        continue  # real data row, don't skip
+                rows_to_skip.append(i)
             if rows_to_skip:
                 df = df.drop(index=rows_to_skip).reset_index(drop=True)
 
@@ -734,7 +745,8 @@ class CSVParser:
         subtotal_before_discount = subtotal
         
         # Calculate discount: use discount_sum_columns if platform specifies them,
-        # otherwise fall back to single shopee_discount column from first row
+        # otherwise fall back to single shopee_discount column from first row.
+        # abs() handles platforms like Lazada where discounts are negative values.
         if self.platform and self.platform.discount_sum_columns:
             discount = 0.0
             for disc_col in self.platform.discount_sum_columns:
@@ -743,6 +755,7 @@ class CSVParser:
         else:
             discount_col = self.column_map.get('shopee_discount')
             discount = self.clean_numeric(first_row[discount_col]) if discount_col and discount_col in first_row.index else 0.0
+        discount = abs(discount)
 
         # Calculate subtotal_after_discount (product amount after discount, before shipping)
         subtotal_after_discount = subtotal_before_discount - discount
