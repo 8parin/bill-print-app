@@ -30,6 +30,17 @@
             <div class="section-group">
                 <h3>Company Info (ข้อมูลบริษัท)</h3>
                 <div class="setting-row">
+                    <label for="companyProfileSelect">Profile:</label>
+                    <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
+                        <select id="companyProfileSelect" class="form-input" style="flex: 1;"></select>
+                        <button id="deleteProfileBtn" class="btn btn-danger btn-sm" title="Delete profile" style="white-space: nowrap;">Delete</button>
+                    </div>
+                </div>
+                <div class="setting-row" id="profileNameRow" style="display: none;">
+                    <label for="profileNameInput">Profile Name:</label>
+                    <input type="text" id="profileNameInput" class="form-input" placeholder="e.g. Main Branch">
+                </div>
+                <div class="setting-row">
                     <label for="companyName">Company Name:</label>
                     <input type="text" id="companyName" class="form-input" value="{{ company.name }}">
                 </div>
@@ -46,7 +57,7 @@
                     <input type="text" id="companyPhone" class="form-input" value="{{ company.phone }}">
                 </div>
                 <button id="saveCompanyBtn" class="btn btn-primary">
-                    Save Company Info
+                    Save Profile
                 </button>
                 <div id="companyStatus" class="status-message"></div>
             </div>

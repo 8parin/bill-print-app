@@ -116,6 +116,21 @@ def _assign_bill_numbers(bill_prefix, bill_start_num):
 with open('config.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
 
+
+def _db_available():
+    """Check if DATABASE_URL is set"""
+    return bool(os.environ.get('DATABASE_URL'))
+
+
+# Initialize database if available
+if _db_available():
+    try:
+        from src.database import init_database, get_all_profiles, get_profile, save_profile, delete_profile
+        init_database()
+        print("[DB] Database initialized successfully")
+    except Exception as e:
+        print(f"[DB] Database init failed, falling back to config.json: {e}")
+
 # Configuration - use absolute paths to avoid issues with send_file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, config['settings']['upload_folder'].lstrip('./'))
@@ -279,18 +294,95 @@ def upload_csv():
 @app.route('/save-company', methods=['POST'])
 @login_required
 def save_company():
-    """Save company info to config"""
+    """Save company info to config and optionally to DB as a profile"""
     try:
         data = request.get_json()
-        config['company']['name'] = data.get('name', config['company']['name'])
-        config['company']['tax_id'] = data.get('tax_id', config['company']['tax_id'])
-        config['company']['address'] = data.get('address', config['company']['address'])
-        config['company']['phone'] = data.get('phone', config['company']['phone'])
+        profile_name = data.get('profile_name', '').strip()
+        name = data.get('name', config['company']['name'])
+        tax_id = data.get('tax_id', config['company']['tax_id'])
+        address = data.get('address', config['company']['address'])
+        phone = data.get('phone', config['company']['phone'])
+
+        # Always update in-memory config and config.json
+        config['company']['name'] = name
+        config['company']['tax_id'] = tax_id
+        config['company']['address'] = address
+        config['company']['phone'] = phone
 
         with open('config.json', 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
-        return jsonify({'success': True, 'message': 'Company info saved.'})
+        # Save to DB if available
+        if _db_available() and profile_name:
+            try:
+                save_profile(profile_name, name, tax_id, address, phone)
+            except Exception as e:
+                return jsonify({'success': True, 'message': f'Saved locally (DB error: {e})', 'profile_name': profile_name})
+
+        return jsonify({'success': True, 'message': 'Company info saved.', 'profile_name': profile_name})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/company-profiles')
+@login_required
+def list_company_profiles():
+    """List all saved company profiles"""
+    if _db_available():
+        try:
+            profiles = get_all_profiles()
+            return jsonify({'profiles': profiles, 'source': 'db'})
+        except Exception:
+            pass
+    # Fallback: config.json as single "Local" profile
+    return jsonify({'profiles': [{'profile_name': 'Local', 'id': None}], 'source': 'config'})
+
+
+@app.route('/api/company-profiles/select/<profile_name>', methods=['POST'])
+@login_required
+def select_company_profile(profile_name):
+    """Set active company profile — updates in-memory config for bill generation"""
+    if _db_available():
+        try:
+            profile = get_profile(profile_name)
+            if profile:
+                config['company']['name'] = profile['name']
+                config['company']['tax_id'] = profile.get('tax_id', '')
+                config['company']['address'] = profile.get('address', '')
+                config['company']['phone'] = profile.get('phone', '')
+
+                with open('config.json', 'w', encoding='utf-8') as f:
+                    json.dump(config, f, ensure_ascii=False, indent=2)
+
+                return jsonify({
+                    'success': True,
+                    'name': profile['name'],
+                    'tax_id': profile.get('tax_id', ''),
+                    'address': profile.get('address', ''),
+                    'phone': profile.get('phone', '')
+                })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    # Fallback: return current config
+    if profile_name == 'Local':
+        c = config['company']
+        return jsonify({'success': True, 'name': c['name'], 'tax_id': c['tax_id'], 'address': c['address'], 'phone': c['phone']})
+
+    return jsonify({'error': 'Profile not found'}), 404
+
+
+@app.route('/api/company-profiles/<profile_name>', methods=['DELETE'])
+@login_required
+def delete_company_profile(profile_name):
+    """Delete a company profile"""
+    if not _db_available():
+        return jsonify({'error': 'Cannot delete without database'}), 400
+    try:
+        success = delete_profile(profile_name)
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Profile not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

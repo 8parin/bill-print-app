@@ -56,20 +56,102 @@ let detectedColumns = [];
 let fieldDefinitions = {};
 let currentMapping = {};
 
-// Save Company Info
+// ── Company Profiles ──
 const saveCompanyBtn = document.getElementById('saveCompanyBtn');
 const companyStatus = document.getElementById('companyStatus');
+const profileSelect = document.getElementById('companyProfileSelect');
+const profileNameRow = document.getElementById('profileNameRow');
+const profileNameInput = document.getElementById('profileNameInput');
+const deleteProfileBtn = document.getElementById('deleteProfileBtn');
 
+async function loadProfiles(selectProfileName) {
+    try {
+        const res = await fetch('/api/company-profiles');
+        const data = await res.json();
+        profileSelect.innerHTML = '';
+
+        data.profiles.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.profile_name;
+            opt.textContent = p.profile_name;
+            profileSelect.appendChild(opt);
+        });
+
+        // "Add New" option
+        const addOpt = document.createElement('option');
+        addOpt.value = '__new__';
+        addOpt.textContent = '＋ Add New...';
+        profileSelect.appendChild(addOpt);
+
+        // Select the requested profile, or first available
+        if (selectProfileName && [...profileSelect.options].some(o => o.value === selectProfileName)) {
+            profileSelect.value = selectProfileName;
+        } else if (data.profiles.length > 0) {
+            profileSelect.value = data.profiles[0].profile_name;
+        }
+
+        handleProfileChange();
+    } catch (err) {
+        console.error('Failed to load profiles:', err);
+    }
+}
+
+async function handleProfileChange() {
+    const val = profileSelect.value;
+
+    if (val === '__new__') {
+        // Show profile name input, clear fields
+        profileNameRow.style.display = '';
+        profileNameInput.value = '';
+        document.getElementById('companyName').value = '';
+        document.getElementById('companyTaxId').value = '';
+        document.getElementById('companyAddress').value = '';
+        document.getElementById('companyPhone').value = '';
+        deleteProfileBtn.style.display = 'none';
+        return;
+    }
+
+    profileNameRow.style.display = 'none';
+    deleteProfileBtn.style.display = '';
+
+    try {
+        const res = await fetch(`/api/company-profiles/select/${encodeURIComponent(val)}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('companyName').value = data.name || '';
+            document.getElementById('companyTaxId').value = data.tax_id || '';
+            document.getElementById('companyAddress').value = data.address || '';
+            document.getElementById('companyPhone').value = data.phone || '';
+        }
+    } catch (err) {
+        console.error('Failed to load profile:', err);
+    }
+}
+
+profileSelect.addEventListener('change', handleProfileChange);
+
+// Save profile
 saveCompanyBtn.addEventListener('click', async () => {
     saveCompanyBtn.disabled = true;
     companyStatus.innerHTML = '⏳ Saving...';
     companyStatus.className = 'status-message info';
+
+    const isNew = profileSelect.value === '__new__';
+    const profileName = isNew ? profileNameInput.value.trim() : profileSelect.value;
+
+    if (!profileName || profileName === '__new__') {
+        companyStatus.innerHTML = '❌ Please enter a profile name.';
+        companyStatus.className = 'status-message error';
+        saveCompanyBtn.disabled = false;
+        return;
+    }
 
     try {
         const response = await fetch('/save-company', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                profile_name: profileName,
                 name: document.getElementById('companyName').value,
                 tax_id: document.getElementById('companyTaxId').value,
                 address: document.getElementById('companyAddress').value,
@@ -82,12 +164,39 @@ saveCompanyBtn.addEventListener('click', async () => {
 
         companyStatus.innerHTML = `✅ ${data.message}`;
         companyStatus.className = 'status-message success';
+
+        // Refresh dropdown and select the saved profile
+        await loadProfiles(profileName);
     } catch (error) {
         companyStatus.innerHTML = `❌ Error: ${error.message}`;
         companyStatus.className = 'status-message error';
     }
     saveCompanyBtn.disabled = false;
 });
+
+// Delete profile
+deleteProfileBtn.addEventListener('click', async () => {
+    const profileName = profileSelect.value;
+    if (!profileName || profileName === '__new__') return;
+
+    if (!confirm(`Delete profile "${profileName}"?`)) return;
+
+    try {
+        const res = await fetch(`/api/company-profiles/${encodeURIComponent(profileName)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Delete failed');
+
+        companyStatus.innerHTML = '✅ Profile deleted.';
+        companyStatus.className = 'status-message success';
+        await loadProfiles();
+    } catch (error) {
+        companyStatus.innerHTML = `❌ Error: ${error.message}`;
+        companyStatus.className = 'status-message error';
+    }
+});
+
+// Load profiles on page load
+loadProfiles();
 
 // Upload area click
 uploadArea.addEventListener('click', () => {
