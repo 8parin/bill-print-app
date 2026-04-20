@@ -799,12 +799,12 @@ class CSVParser:
         order_date = self.format_order_date(raw_date_val)
         order_sort_key = self._parse_sort_key(raw_date_val)  # full datetime, trimmed only at display
         order_id_raw = first_row[self.column_map['order_id']] if 'order_id' in self.column_map else ''
-        order_id = str(int(order_id_raw)) if isinstance(order_id_raw, float) and order_id_raw == int(order_id_raw) else str(order_id_raw)
+        order_id = str(int(order_id_raw)) if isinstance(order_id_raw, float) and order_id_raw == int(order_id_raw) else self._clean_address(str(order_id_raw))
 
         tracking_col = self.column_map.get('tracking_number')
         tracking_number = ''
         if tracking_col and tracking_col in first_row.index and pd.notna(first_row[tracking_col]):
-            tracking_number = str(first_row[tracking_col])
+            tracking_number = self._clean_address(str(first_row[tracking_col]))
 
         invoice = Invoice(
             invoice_number=invoice_number,
