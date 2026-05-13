@@ -97,18 +97,37 @@ class CSVParser:
         # Strip whitespace and BOM from column names
         df.columns = [col.strip().lstrip('\ufeff') for col in df.columns]
 
-        # Platform-specific: skip metadata/description rows (e.g. TikTok row 2)
-        # Only skip row 0 if it looks like a description row (non-numeric Order ID),
-        # since newer TikTok exports omit the description row.
+        # Platform-specific: skip metadata/description rows (e.g. TikTok row 2).
+        # TikTok exports inconsistently include a description row right after the
+        # header — newer exports omit it. Use multiple signals so we don't drop a
+        # real order row by mistake. A row is treated as a description row if ANY
+        # signal flags it:
+        #   - order_id value is not all digits
+        #   - quantity value is not a positive integer
+        #   - order_type value (if column exists) is not Normal/Pre-order
         if self.platform and self.platform.skip_rows:
             order_col = self.column_map.get('order_id', '')
+            qty_col = self.column_map.get('quantity', '')
+            type_col = self.column_map.get('order_type', '')
             rows_to_skip = []
             for i in self.platform.skip_rows:
                 if i >= len(df):
                     continue
-                if i == 0 and order_col and order_col in df.columns:
-                    val = str(df.at[i, order_col]).strip()
-                    if val.isdigit():
+                if i == 0:
+                    looks_like_description = False
+                    if order_col and order_col in df.columns:
+                        val = str(df.at[i, order_col]).strip()
+                        if not val.isdigit():
+                            looks_like_description = True
+                    if qty_col and qty_col in df.columns:
+                        qval = str(df.at[i, qty_col]).strip()
+                        if not (qval.isdigit() and int(qval) > 0):
+                            looks_like_description = True
+                    if type_col and type_col in df.columns:
+                        tval = str(df.at[i, type_col]).strip()
+                        if tval and tval not in ('Normal', 'Pre-order'):
+                            looks_like_description = True
+                    if not looks_like_description:
                         continue  # real data row, don't skip
                 rows_to_skip.append(i)
             if rows_to_skip:
@@ -418,6 +437,37 @@ class CSVParser:
 
         df_filtered = df[~df[order_col].isin(cancelled_order_ids)]
         return df_filtered, len(cancelled_order_ids)
+
+    def filter_preorders(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
+        """Drop entire orders flagged as pre-order in the order_type column.
+
+        TikTok marks the order type ('Normal' / 'Pre-order') only on the first SKU
+        row of a multi-SKU order — subsequent rows are blank. We therefore remove
+        the full order (all rows sharing the order_id) whenever any row matches
+        platform.preorder_values, the same shape as filter_cancelled_invoices.
+
+        No-op when the platform doesn't define preorder_values or the column is
+        absent (older TikTok exports predate the 'Normal or Pre-order' column).
+        Returns (filtered_df, removed_order_count).
+        """
+        if not self.platform or not self.platform.preorder_values:
+            return df, 0
+
+        type_col = self.column_map.get('order_type')
+        order_col = self.column_map.get('order_id')
+        if not type_col or type_col not in df.columns:
+            return df, 0
+        if not order_col or order_col not in df.columns:
+            return df, 0
+
+        preorder_values = set(self.platform.preorder_values)
+        preorder_mask = df[type_col].astype(str).str.strip().isin(preorder_values)
+        preorder_order_ids = df.loc[preorder_mask, order_col].unique()
+        if len(preorder_order_ids) == 0:
+            return df, 0
+
+        df_filtered = df[~df[order_col].isin(preorder_order_ids)].copy()
+        return df_filtered, len(preorder_order_ids)
 
     def filter_confirmed_returns(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
         """Auto-remove item rows with confirmed return status.
@@ -839,6 +889,11 @@ class CSVParser:
         self.last_cancelled_count = cancelled_count
         if cancelled_count > 0:
             print(f"Filtered out {cancelled_count} cancelled invoice(s)")
+
+        df, preorder_count = self.filter_preorders(df)
+        self.last_preorder_count = preorder_count
+        if preorder_count > 0:
+            print(f"Filtered out {preorder_count} pre-order row(s)")
 
         grouped = self.group_by_invoice(df)
 

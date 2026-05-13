@@ -64,6 +64,11 @@ class PlatformPreset:
     # Order Status values that mean the order has been shipped (exclude from pending even if date is NaN)
     shipped_statuses: list = field(default_factory=list)
 
+    # Values in the order_type column that mark a pre-order (e.g. ['Pre-order'] for TikTok).
+    # Entire orders containing any of these values are removed. Empty list/None = no filtering.
+    # No-op if the order_type column is absent from the CSV (older TikTok exports).
+    preorder_values: list = field(default_factory=list)
+
 
 # ---------------------------------------------------------------------------
 # Shopee
@@ -172,6 +177,7 @@ TIKTOK_PRESET = PlatformPreset(
         'shopee_discount': 'SKU Seller Discount',  # reuse key for discount
         'tax_invoice': 'Order ID',  # group by order ID
         'service_fee': 'Small Order Fee',
+        'order_type': 'Normal or Pre-order',
     },
     fingerprint_columns={'SKU ID', 'Seller SKU', 'SKU Subtotal After Discount'},
     cancelled_statuses=['ยกเลิกแล้ว'],
@@ -184,6 +190,7 @@ TIKTOK_PRESET = PlatformPreset(
     discount_sum_columns=['SKU Seller Discount'],  # seller discount only (not platform discount)
     date_fallback_columns=['RTS Time', 'Paid Time', 'Created Time'],  # fallback when Shipped Time is NaN
     shipped_statuses=['จัดส่งแล้ว', 'เสร็จสมบูรณ์'],  # these orders get bills even if Shipped Time is NaN
+    preorder_values=['Pre-order'],  # drop entire pre-orders; no-op for older CSVs without this column
 )
 
 # ---------------------------------------------------------------------------

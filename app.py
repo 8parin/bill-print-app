@@ -456,6 +456,9 @@ def save_mapping():
 
             df, cancelled_count = parser_with_mapping.filter_cancelled_invoices(df)
 
+            # Drop pre-order rows for platforms that mark them (TikTok 'Normal or Pre-order')
+            df, preorder_count = parser_with_mapping.filter_preorders(df)
+
             # Auto-remove confirmed returns (e.g. สถานะการคืนเงินหรือคืนสินค้า = คำขอได้รับการยอมรับแล้ว).
             # For Shopee, if the returned item is in row1, invoice-level fields are
             # forward-filled before deletion so no customer/address info is lost.
@@ -471,6 +474,8 @@ def save_mapping():
                 parts = []
                 if cancelled_count > 0:
                     parts.append(f'{cancelled_count} cancelled invoice(s) filtered out')
+                if preorder_count > 0:
+                    parts.append(f'{preorder_count} pre-order row(s) filtered out')
                 if auto_return_count > 0:
                     parts.append(f'{auto_return_count} confirmed returned item(s) auto-removed')
                 if parts:
@@ -549,6 +554,8 @@ def save_mapping():
                 parts = []
                 if cancelled_count > 0:
                     parts.append(f'{cancelled_count} cancelled invoice(s) filtered out')
+                if preorder_count > 0:
+                    parts.append(f'{preorder_count} pre-order row(s) filtered out')
                 if auto_return_count > 0:
                     parts.append(f'{auto_return_count} confirmed returned item(s) auto-removed')
                 if parts:
@@ -595,6 +602,9 @@ def apply_return_decisions():
         # Read CSV and filter cancelled orders
         df = parser.read_csv(csv_path)
         df, cancelled_count = parser.filter_cancelled_invoices(df)
+
+        # Drop pre-order rows for platforms that mark them (TikTok 'Normal or Pre-order')
+        df, preorder_count = parser.filter_preorders(df)
 
         # Auto-remove confirmed returns (same step as in save_mapping, so row indices match)
         df, auto_return_count = parser.filter_confirmed_returns(df)
@@ -644,6 +654,8 @@ def apply_return_decisions():
         parts = []
         if cancelled_count > 0:
             parts.append(f'{cancelled_count} cancelled')
+        if preorder_count > 0:
+            parts.append(f'{preorder_count} pre-order row(s) filtered out')
         if auto_return_count > 0:
             parts.append(f'{auto_return_count} confirmed returned item(s) auto-removed')
         if removed_products > 0:
