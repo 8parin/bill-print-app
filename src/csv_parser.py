@@ -439,15 +439,15 @@ class CSVParser:
         return df_filtered, len(cancelled_order_ids)
 
     def filter_preorders(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
-        """Drop entire orders flagged as pre-order in the order_type column.
+        """Keep only orders whose order_type is explicitly in platform.normal_values.
 
-        TikTok marks the order type ('Normal' / 'Pre-order') only on the first SKU
-        row of a multi-SKU order — subsequent rows are blank. We therefore remove
-        the full order (all rows sharing the order_id) whenever any row matches
-        platform.preorder_values, the same shape as filter_cancelled_invoices.
+        TikTok marks order type ('Normal' / 'Pre-order') only on the first SKU row
+        of an order; later rows are blank. We therefore look at each order_id and
+        keep it only if at least one of its rows is explicitly 'Normal'. Orders
+        where every row is blank or 'Pre-order' are removed entirely.
 
-        No-op when the platform doesn't define preorder_values or the column is
-        absent (older TikTok exports predate the 'Normal or Pre-order' column).
+        No-op when the platform doesn't define preorder_values (used here as the
+        feature flag) or the column is absent (older TikTok exports lack it).
         Returns (filtered_df, removed_order_count).
         """
         if not self.platform or not self.platform.preorder_values:
@@ -460,14 +460,16 @@ class CSVParser:
         if not order_col or order_col not in df.columns:
             return df, 0
 
-        preorder_values = set(self.platform.preorder_values)
-        preorder_mask = df[type_col].astype(str).str.strip().isin(preorder_values)
-        preorder_order_ids = df.loc[preorder_mask, order_col].unique()
-        if len(preorder_order_ids) == 0:
+        normalized = df[type_col].astype(str).str.strip()
+        normal_mask = normalized == 'Normal'
+        normal_order_ids = set(df.loc[normal_mask, order_col].unique())
+        all_order_ids = set(df[order_col].unique())
+        removed_ids = all_order_ids - normal_order_ids
+        if not removed_ids:
             return df, 0
 
-        df_filtered = df[~df[order_col].isin(preorder_order_ids)].copy()
-        return df_filtered, len(preorder_order_ids)
+        df_filtered = df[df[order_col].isin(normal_order_ids)].copy()
+        return df_filtered, len(removed_ids)
 
     def filter_confirmed_returns(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
         """Auto-remove item rows with confirmed return status.

@@ -202,10 +202,17 @@ class PDFGeneratorReportLab:
         col_price_w = W * 0.17
         col_total_w = W * 0.17
 
+        # Compact mode for bills with many items, to fit on one page
+        items_compact = len(invoice.items) >= 10
+        items_font_sz = font_sz * 0.78 if items_compact else font_sz
+        items_item_font_sz = item_font_sz * 0.78 if items_compact else item_font_sz
+        items_item_leading = item_leading * 0.78 if items_compact else item_leading
+        items_cell_pad = cell_pad * 0.4 if items_compact else cell_pad
+
         item_desc_style = ParagraphStyle('ItemDesc',
                                          parent=normal_style,
-                                         fontSize=item_font_sz,
-                                         leading=item_leading)
+                                         fontSize=items_item_font_sz,
+                                         leading=items_item_leading)
 
         items_data = [['ลําดับ', 'รายละเอียดสินค้า', 'จํานวน', 'ราคา/หน่วย', 'จํานวนเงิน']]
 
@@ -218,10 +225,11 @@ class PDFGeneratorReportLab:
                 f"{item.total:,.2f}"
             ])
 
-        # Add empty rows for aesthetics: 6 for landscape, 8 for portrait
-        max_item_rows = 6 if is_landscape else 8
-        for _ in range(max(0, max_item_rows - len(invoice.items))):
-            items_data.append(['', '', '', '', ''])
+        # Add empty rows for aesthetics (skip in compact mode to save space)
+        if not items_compact:
+            max_item_rows = 6 if is_landscape else 8
+            for _ in range(max(0, max_item_rows - len(invoice.items))):
+                items_data.append(['', '', '', '', ''])
 
         items_table = Table(items_data,
                            colWidths=[col_num_w, col_desc_w, col_qty_w, col_price_w, col_total_w],
@@ -230,14 +238,14 @@ class PDFGeneratorReportLab:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
             ('FONTNAME', (0, 0), (-1, -1), self.thai_font),
-            ('FONTSIZE', (0, 0), (-1, -1), font_sz),
+            ('FONTSIZE', (0, 0), (-1, -1), items_font_sz),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (2, 1), (2, -1), 'CENTER'),
             ('ALIGN', (3, 1), (4, -1), 'RIGHT'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), cell_pad),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), cell_pad),
+            ('TOPPADDING', (0, 0), (-1, -1), items_cell_pad),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), items_cell_pad),
         ]))
         story.append(items_table)
         story.append(Spacer(1, spacer_sm))
@@ -433,7 +441,14 @@ class PDFGeneratorReportLab:
         col_qty_w = W * 0.12
         col_price_w = W * 0.17
         col_total_w = W * 0.17
-        item_desc_style = ParagraphStyle('ItemDesc', parent=normal_style, fontSize=item_font_sz, leading=item_leading)
+        # Compact mode for bills with many items, to fit on one page
+        items_compact = len(invoice.items) >= 10
+        items_font_sz = font_sz * 0.78 if items_compact else font_sz
+        items_item_font_sz = item_font_sz * 0.78 if items_compact else item_font_sz
+        items_item_leading = item_leading * 0.78 if items_compact else item_leading
+        items_cell_pad = cell_pad * 0.4 if items_compact else cell_pad
+
+        item_desc_style = ParagraphStyle('ItemDesc', parent=normal_style, fontSize=items_item_font_sz, leading=items_item_leading)
 
         items_data = [['ลําดับ', 'รายละเอียดสินค้า', 'จํานวน', 'ราคา/หน่วย', 'จํานวนเงิน']]
         for i, item in enumerate(invoice.items, 1):
@@ -445,24 +460,25 @@ class PDFGeneratorReportLab:
                 f"{item.total:,.2f}"
             ])
 
-        # Add empty rows for aesthetics: 6 for landscape, 8 for portrait
-        max_item_rows = 6 if is_landscape else 8
-        for _ in range(max(0, max_item_rows - len(invoice.items))):
-            items_data.append(['', '', '', '', ''])
+        # Add empty rows for aesthetics (skip in compact mode to save space)
+        if not items_compact:
+            max_item_rows = 6 if is_landscape else 8
+            for _ in range(max(0, max_item_rows - len(invoice.items))):
+                items_data.append(['', '', '', '', ''])
 
         items_table = Table(items_data, colWidths=[col_num_w, col_desc_w, col_qty_w, col_price_w, col_total_w], rowHeights=None)
         items_table.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
             ('FONTNAME', (0, 0), (-1, -1), self.thai_font),
-            ('FONTSIZE', (0, 0), (-1, -1), font_sz),
+            ('FONTSIZE', (0, 0), (-1, -1), items_font_sz),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (2, 1), (2, -1), 'CENTER'),
             ('ALIGN', (3, 1), (4, -1), 'RIGHT'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), cell_pad),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), cell_pad),
+            ('TOPPADDING', (0, 0), (-1, -1), items_cell_pad),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), items_cell_pad),
         ]))
         story.append(items_table)
         story.append(Spacer(1, spacer_sm))
