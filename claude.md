@@ -19,7 +19,13 @@ Bill_Print/
 ├── config.json               # App config (column mappings etc.)
 │
 ├── src/
-│   ├── csv_parser.py              # Platform-agnostic CSV parsing pipeline
+│   ├── csv_parser.py              # CSVParser: thin backward-compat facade over src/parsing/
+│   ├── parsing/                    # CSV parsing internals (Phase 5 split of csv_parser.py)
+│   │   ├── context.py              # ParseContext (platform, column_map, vat_rate) + mapping validation
+│   │   ├── csv_io.py               # read_csv, detect_columns, validate_csv(_format), column diffs
+│   │   ├── normalize.py            # pure cleaning: clean_numeric, date parse/format, address text
+│   │   ├── order_filters.py        # cancelled/preorder/return filtering, forward-fill, pending split
+│   │   └── assembly.py             # group_by_invoice, parse_invoice, parse_csv_to_invoices
 │   ├── bill_data.py               # Dataclasses: CompanyInfo, Customer, LineItem, Invoice
 │   ├── pdf_generator_reportlab.py # Active PDF generator (ReportLab)
 │   ├── platform_presets.py        # Shopee / Lazada / TikTok column maps & quirks
@@ -53,7 +59,8 @@ Bill_Print/
 ├── tests/                     # pytest suite
 │   ├── fixtures/               # Sample CSVs (shopee_sample.csv, lazada_sample.csv, tiktok_sample.csv)
 │   ├── test_bill_data.py
-│   ├── test_csv_parser.py
+│   ├── test_csv_parser.py         # golden regression values — CSVParser facade
+│   ├── test_normalize.py          # unit tests for src/parsing/normalize.py
 │   └── test_app.py
 ├── uploads/                    # Uploaded CSVs (temp, gitignored)
 └── output/                     # Generated PDFs (temp, /tmp on Render, gitignored)
@@ -65,7 +72,8 @@ Bill_Print/
 |---|---|
 | Bill PDF layout / fonts / paper size | `src/pdf_generator_reportlab.py`, `src/fonts.py`, `fonts/` |
 | Bill preview HTML | `templates/bill_template.html` |
-| CSV parsing, date/number cleaning, return & cancel filtering | `src/csv_parser.py` |
+| CSV parsing, date/number cleaning, return & cancel filtering | `src/parsing/` (`csv_io.py`, `normalize.py`, `order_filters.py`, `assembly.py`); `src/csv_parser.py` is a backward-compat facade — new code should import `src/parsing/` directly |
+| Column-map resolution (custom > platform preset > default) & required-field validation | `src/parsing/context.py` (`ParseContext`) |
 | Order of processing steps (filter → group → parse → sort) | `src/pipeline.py` (`process_csv`) |
 | Add/adjust a marketplace platform (columns, quirks, report columns) | `src/platform_presets.py` |
 | VAT math, invoice/line-item fields | `src/bill_data.py` |
