@@ -1097,6 +1097,14 @@ def get_stats():
     })
 
 
+@app.route('/version')
+def version():
+    """Deployed version marker — Render sets RENDER_GIT_COMMIT on every deploy."""
+    return jsonify({
+        'commit': os.environ.get('RENDER_GIT_COMMIT', 'local')[:7],
+    })
+
+
 if __name__ == '__main__':
     # Auto-open browser
     import webbrowser
