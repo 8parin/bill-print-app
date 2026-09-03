@@ -14,3 +14,7 @@ services:
         value: production
       - key: OUTPUT_DIR
         value: /tmp/output/bills
+      - key: SECRET_KEY
+        generateValue: true  # Render generates and persists this; required because
+                              # FLASK_ENV=production makes app.py raise at startup
+                              # otherwise (sessions/sid cookies must survive restarts)

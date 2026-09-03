@@ -9,65 +9,21 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 from .bill_data import Invoice, CompanyInfo
+from .fonts import register_thai_fonts
 
 
 class PDFGeneratorReportLab:
     """Generate PDF bills using ReportLab for better Thai support"""
-    
+
     def __init__(self, output_dir: str):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
-        
-        # Register Thai font for PDF generation
-        # Priority 1: bundled Sarabun font (works on all platforms including Linux/Render)
-        # Priority 2: system Tahoma (macOS/Windows)
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        bundled_regular = os.path.join(base_dir, 'fonts', 'Sarabun-Regular.ttf')
-        bundled_bold = os.path.join(base_dir, 'fonts', 'Sarabun-Bold.ttf')
 
-        tahoma_candidates = [
-            '/System/Library/Fonts/Supplemental/Tahoma.ttf',
-            '/Library/Fonts/Tahoma.ttf',
-            r'C:\Windows\Fonts\tahoma.ttf',
-            r'C:\Windows\Fonts\Tahoma.ttf',
-        ]
-        tahoma_bold_candidates = [
-            '/System/Library/Fonts/Supplemental/Tahoma Bold.ttf',
-            '/Library/Fonts/Tahoma Bold.ttf',
-            r'C:\Windows\Fonts\tahomabd.ttf',
-            r'C:\Windows\Fonts\Tahomabd.ttf',
-        ]
-
-        def find_font(candidates):
-            for path in candidates:
-                if os.path.exists(path):
-                    return path
-            return None
-
-        if os.path.exists(bundled_regular):
-            regular_path = bundled_regular
-            bold_path = bundled_bold if os.path.exists(bundled_bold) else bundled_regular
-        else:
-            regular_path = find_font(tahoma_candidates)
-            bold_path = find_font(tahoma_bold_candidates)
-
-        try:
-            if not regular_path:
-                raise FileNotFoundError("No Thai font found")
-            pdfmetrics.registerFont(TTFont('ThaiFont', regular_path))
-            pdfmetrics.registerFont(TTFont('ThaiFont-Bold', bold_path or regular_path))
-            self.thai_font = 'ThaiFont'
-            self.thai_font_bold = 'ThaiFont-Bold'
-            print(f"Thai font loaded: {regular_path}")
-        except Exception as e:
-            print(f"Font loading error: {e}")
-            # Fallback to Helvetica (won't display Thai properly but won't crash)
-            self.thai_font = 'Helvetica'
-            self.thai_font_bold = 'Helvetica-Bold'
+        # Register Thai font for PDF generation (shared with src/sales_report.py —
+        # see src/fonts.py for the discovery/priority order).
+        self.thai_font, self.thai_font_bold = register_thai_fonts()
     
     
     def _get_page_size(self, paper_size: str, orientation: str):

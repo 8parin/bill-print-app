@@ -69,6 +69,25 @@ class PlatformPreset:
     # No-op if the order_type column is absent from the CSV (older TikTok exports).
     preorder_values: list = field(default_factory=list)
 
+    # Column names for the sales report (src/sales_report.py build_sales_data()).
+    # Looked up with the same fuzzy find_col() substring match used for every
+    # other report column. None (the default) means "no preset-specific
+    # overrides" — build_sales_data() then falls back to the hardcoded Shopee
+    # column names, which is exactly today's behavior for Lazada/TikTok (the
+    # strings simply aren't found in those CSVs, so the columns resolve to
+    # None and values become 0/None) and for the custom-mapping path.
+    #
+    # Recognized keys:
+    #   seller_discount_code  - single column, seller-paid discount code amount
+    #   commission            - single column, platform commission fee
+    #   transaction_fee       - single column, payment transaction fee
+    #   buyer_paid            - single column, price actually paid by the buyer
+    #   net_sale              - single column, net sale amount per line item
+    #   platform_shipping     - single column, shipping fee covered by the platform
+    #   seller_disc_other     - list of columns, summed per order (misc seller-side discounts)
+    #   platform_disc_other   - list of columns, summed per order (misc platform-side discounts)
+    report_columns: Optional[dict] = None
+
 
 # ---------------------------------------------------------------------------
 # Shopee
@@ -112,6 +131,27 @@ SHOPEE_PRESET = PlatformPreset(
         'phone', 'address', 'tracking_number', 'shopee_discount',
         'shipping_buyer', 'service_fee', 'grand_total', 'estimated_shipping',
     ],
+    report_columns={
+        'seller_discount_code': 'โค้ดส่วนลดชำระโดยผู้ขาย',
+        'commission': 'ค่าคอมมิชชั่น',
+        'transaction_fee': 'Transaction Fee',
+        'buyer_paid': 'ราคาสินค้าที่ชำระโดยผู้ซื้อ',
+        'net_sale': 'ราคาขายสุทธิ',
+        'platform_shipping': 'ค่าจัดส่งที่ Shopee ออกให้โดยประมาณ',
+        'seller_disc_other': [
+            'โค้ด coins Cashback ชำระโดยผู้ขาย',
+            'ส่วนลด bundle deal ชำระโดยผู้ขาย',
+            'โบนัสส่วนลดเครื่องเก่าแลกใหม่จากผู้ขาย',
+        ],
+        'platform_disc_other': [
+            'โค้ดส่วนลดชำระโดย Shopee',
+            'ส่วนลด bundle deal ชำระโดย Shopee',
+            'ส่วนลดจากการใช้เหรียญ',
+            'โปรโมชั่นช่องทางชำระเงินทั้งหมด',
+            'ส่วนลดเครื่องเก่าแลกใหม่',
+            'โบนัสส่วนลดเครื่องเก่าแลกใหม่',
+        ],
+    },
 )
 
 # ---------------------------------------------------------------------------

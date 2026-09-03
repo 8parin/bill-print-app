@@ -23,3 +23,22 @@ os.environ.pop('APP_PASSWORD', None)
 os.chdir(PROJECT_ROOT)
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
+CONFIG_PATH = os.path.join(PROJECT_ROOT, 'config.json')
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_config_json():
+    # Several routes (/save-mapping, /save-company, /api/company-profiles/...)
+    # persist to config.json. Save/restore the real project config.json around
+    # every test so driving these routes through the Flask test client never
+    # leaves the repo's config.json permanently mutated.
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        original = f.read()
+    try:
+        yield
+    finally:
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            f.write(original)

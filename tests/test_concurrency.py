@@ -17,27 +17,11 @@ import app as app_module
 from src.platform_presets import SHOPEE_PRESET, TIKTOK_PRESET
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
 
 
 def _fixture_bytes(name):
     with open(os.path.join(FIXTURES_DIR, name), 'rb') as f:
         return f.read()
-
-
-@pytest.fixture(autouse=True)
-def _restore_config_json():
-    # /save-mapping persists column_mapping to config.json (unchanged behavior
-    # from before this refactor). Save/restore the real project config.json
-    # around this test so driving /save-mapping through the Flask test client
-    # doesn't leave the repo's config.json permanently mutated.
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        original = f.read()
-    try:
-        yield
-    finally:
-        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-            f.write(original)
 
 
 @pytest.fixture

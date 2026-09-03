@@ -3,9 +3,10 @@ Bill Print Flask Application
 """
 import os
 import json
+import logging
 import uuid
 from io import BytesIO
-from flask import Flask, render_template, request, jsonify, send_file, url_for, make_response, session, redirect
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, url_for, make_response, session, redirect
 from functools import wraps
 from werkzeug.utils import secure_filename
 import re
@@ -18,8 +19,21 @@ from src.bill_data import CompanyInfo
 from src.debug_util import debug_write
 from src.pipeline import process_csv
 from src.session_state import SessionState, SessionStore
+from src.sales_report import build_sales_data, build_sales_report_pdf, build_sales_export_df
 
 app = Flask(__name__)
+
+# On Render (FLASK_ENV=production), sessions/sid cookies MUST survive process
+# restarts (gunicorn worker recycling, redeploys). A random os.urandom() key
+# generated at import time would invalidate every session on every restart,
+# so production requires an explicit SECRET_KEY env var. Local/dev keeps the
+# os.urandom() fallback for convenience.
+if os.environ.get('FLASK_ENV') == 'production' and not os.environ.get('SECRET_KEY'):
+    raise RuntimeError(
+        "SECRET_KEY environment variable is required when FLASK_ENV=production "
+        "(sessions/sid cookies would break on every restart otherwise). "
+        "Set SECRET_KEY in the Render dashboard, or in render.yaml with generateValue: true."
+    )
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 
 APP_PASSWORD = os.environ.get('APP_PASSWORD', '')
@@ -290,8 +304,9 @@ def upload_csv():
         save_state(state)
         return jsonify(response_data)
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error handling CSV upload')
+        return jsonify({'error': 'Internal error while uploading the CSV. Check server logs.'}), 500
 
 
 @app.route('/save-company', methods=['POST'])
@@ -306,25 +321,37 @@ def save_company():
         address = data.get('address', config['company']['address'])
         phone = data.get('phone', config['company']['phone'])
 
-        # Always update in-memory config and config.json
+        # Always update in-memory config (used by get_company_info() for bill generation).
         config['company']['name'] = name
         config['company']['tax_id'] = tax_id
         config['company']['address'] = address
         config['company']['phone'] = phone
 
-        with open('config.json', 'w', encoding='utf-8') as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
+        use_db = _db_available() and bool(profile_name)
+
+        # config.json is a local-fallback persistence mechanism; on Render the
+        # filesystem is ephemeral anyway, so this write was illusory
+        # persistence there. Only write it when we're NOT persisting to the
+        # DB instead (no DB configured, or no profile_name given).
+        if not use_db:
+            with open('config.json', 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
 
         # Save to DB if available
-        if _db_available() and profile_name:
+        if use_db:
             try:
                 save_profile(profile_name, name, tax_id, address, phone)
-            except Exception as e:
-                return jsonify({'success': True, 'message': f'Saved locally (DB error: {e})', 'profile_name': profile_name})
+            except Exception:
+                app.logger.exception('Error saving company profile to DB')
+                # DB write failed — fall back to config.json so the data isn't lost.
+                with open('config.json', 'w', encoding='utf-8') as f:
+                    json.dump(config, f, ensure_ascii=False, indent=2)
+                return jsonify({'success': True, 'message': 'Saved locally (DB error, see server logs).', 'profile_name': profile_name})
 
         return jsonify({'success': True, 'message': 'Company info saved.', 'profile_name': profile_name})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error saving company info')
+        return jsonify({'error': 'Internal error while saving company info. Check server logs.'}), 500
 
 
 @app.route('/api/company-profiles')
@@ -344,18 +371,25 @@ def list_company_profiles():
 @app.route('/api/company-profiles/select/<profile_name>', methods=['POST'])
 @login_required
 def select_company_profile(profile_name):
-    """Set active company profile — updates in-memory config for bill generation"""
+    """Set active company profile — updates in-memory config for bill generation.
+
+    NOTE (multi-worker caveat): config['company'] is process-global in-memory
+    state, shared by every session on this worker — selecting a profile here
+    is not per-user/per-session. That is today's semantic and is unchanged by
+    this refactor; only the config.json write was removed (see below).
+    """
     if _db_available():
         try:
             profile = get_profile(profile_name)
             if profile:
+                # DB is the source of truth here — update in-memory config only.
+                # No config.json write: on Render the filesystem is ephemeral,
+                # so that write was illusory persistence anyway, and the DB
+                # profile is reloaded via get_profile() next time regardless.
                 config['company']['name'] = profile['name']
                 config['company']['tax_id'] = profile.get('tax_id', '')
                 config['company']['address'] = profile.get('address', '')
                 config['company']['phone'] = profile.get('phone', '')
-
-                with open('config.json', 'w', encoding='utf-8') as f:
-                    json.dump(config, f, ensure_ascii=False, indent=2)
 
                 return jsonify({
                     'success': True,
@@ -364,8 +398,9 @@ def select_company_profile(profile_name):
                     'address': profile.get('address', ''),
                     'phone': profile.get('phone', '')
                 })
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+        except Exception:
+            app.logger.exception('Error selecting company profile')
+            return jsonify({'error': 'Internal error while selecting company profile. Check server logs.'}), 500
 
     # Fallback: return current config
     if profile_name == 'Local':
@@ -386,8 +421,9 @@ def delete_company_profile(profile_name):
         if success:
             return jsonify({'success': True})
         return jsonify({'error': 'Profile not found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error deleting company profile')
+        return jsonify({'error': 'Internal error while deleting company profile. Check server logs.'}), 500
 
 
 @app.route('/get-field-definitions')
@@ -497,8 +533,9 @@ def save_mapping():
                 'message': msg
             })
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error saving column mapping')
+        return jsonify({'error': 'Internal error while saving the column mapping. Check server logs.'}), 500
 
 
 @app.route('/apply-return-decisions', methods=['POST'])
@@ -557,10 +594,9 @@ def apply_return_decisions():
             'message': msg
         })
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error applying return decisions')
+        return jsonify({'error': 'Internal error while applying return decisions. Check server logs.'}), 500
 
 
 @app.route('/preview')
@@ -584,8 +620,9 @@ def preview_bill():
         # Return rendered template
         return render_template('bill_template.html', invoice=invoice, company=company)
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error rendering bill preview')
+        return jsonify({'error': 'Internal error while rendering the bill preview. Check server logs.'}), 500
 
 
 @app.route('/preview-by-order', methods=['POST'])
@@ -629,8 +666,9 @@ def preview_by_order():
             'order_id': matching_invoice.order_id
         })
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error rendering bill preview by order')
+        return jsonify({'error': 'Internal error while rendering the bill preview. Check server logs.'}), 500
 
 
 @app.route('/generate', methods=['POST'])
@@ -687,10 +725,9 @@ def generate_bills():
             'message': f'Successfully generated {len(existing_files)} bills ({paper_size} {orientation})'
         })
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error generating batch bills')
+        return jsonify({'error': 'Internal error while generating bills. Check server logs.'}), 500
 
 
 @app.route('/debug-bills')
@@ -759,8 +796,9 @@ def generate_one_bill():
             'message': f'Successfully generated bill for invoice {state.invoices[0].invoice_number} ({paper_size} {orientation})'
         })
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error generating single bill')
+        return jsonify({'error': 'Internal error while generating the bill. Check server logs.'}), 500
 
 
 @app.route('/generate-by-order', methods=['POST'])
@@ -818,8 +856,9 @@ def generate_by_order():
             'message': f'Successfully generated bill for order {matching_invoice.order_id} ({paper_size} {orientation})'
         })
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error generating bill by order')
+        return jsonify({'error': 'Internal error while generating the bill. Check server logs.'}), 500
 
 
 @app.route('/download/<filename>')
@@ -828,17 +867,13 @@ def download_file(filename):
     """Download a single PDF from this session's own output subdir"""
     sid = get_sid()
     safe_name = secure_filename(filename)
-    filepath = os.path.join(app.config['OUTPUT_FOLDER'], sid, safe_name)
+    output_dir = os.path.join(app.config['OUTPUT_FOLDER'], sid)
+    filepath = os.path.join(output_dir, safe_name)
 
     if not safe_name or not os.path.exists(filepath):
         return jsonify({'error': f'File not found: {filename}'}), 404
 
-    with open(filepath, 'rb') as f:
-        pdf_bytes = f.read()
-
-    response = make_response(pdf_bytes)
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = f'attachment; filename={safe_name}'
+    response = make_response(send_from_directory(output_dir, safe_name, as_attachment=True))
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
@@ -879,259 +914,24 @@ def download_all():
         response.headers['Expires'] = '0'
         return response
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error downloading batch PDF')
+        return jsonify({'error': 'Internal error while downloading the batch PDF. Check server logs.'}), 500
 
 
-def _build_sales_data(df, preset, mapping, invoice_lookup, bill_prefix, starting_bill_number):
-    """Build sales report rows from the trimmed dataframe.
-
-    Returns a dict containing report_rows (list of dicts), per-order summary dicts,
-    seen_orders (set), total_qty (float), and model_stats (dict).
-    """
-    order_col = mapping.get('order_id', 'หมายเลขคำสั่งซื้อ')
-    product_col = mapping.get('product_name', 'ชื่อสินค้า')
-    sale_price_col = mapping.get('sale_price', 'ราคาขาย')
-    qty_col = mapping.get('quantity', 'จำนวน')
-    estimated_shipping_col = mapping.get('estimated_shipping', 'ค่าจัดส่งโดยประมาณ')
-    option_name_col = mapping.get('variant', 'ชื่อตัวเลือก')
-    shopee_discount_col = mapping.get('shopee_discount', 'ส่วนลดจาก Shopee')
-    recipient_col = mapping.get('recipient_name', 'ชื่อผู้รับ')
-
-    def find_col(name):
-        stripped_cols = {c.strip(): c for c in df.columns}
-        if name in stripped_cols:
-            return stripped_cols[name]
-        for col_stripped, col_orig in stripped_cols.items():
-            if name in col_stripped:
-                return col_orig
-        return None
-
-    seller_discount_code_col = find_col('โค้ดส่วนลดชำระโดยผู้ขาย')
-    commission_col = find_col('ค่าคอมมิชชั่น')
-    transaction_fee_col = find_col('Transaction Fee')
-    buyer_paid_col = find_col('ราคาสินค้าที่ชำระโดยผู้ซื้อ')
-    net_sale_col = find_col('ราคาขายสุทธิ')
-    shopee_shipping_col = find_col('ค่าจัดส่งที่ Shopee ออกให้โดยประมาณ')
-
-    seller_disc_other_cols = [c for c in (find_col(n) for n in [
-        'โค้ด coins Cashback ชำระโดยผู้ขาย',
-        'ส่วนลด bundle deal ชำระโดยผู้ขาย',
-        'โบนัสส่วนลดเครื่องเก่าแลกใหม่จากผู้ขาย',
-    ]) if c]
-
-    shopee_disc_other_cols = [c for c in (find_col(n) for n in [
-        'โค้ดส่วนลดชำระโดย Shopee',
-        'ส่วนลด bundle deal ชำระโดย Shopee',
-        'ส่วนลดจากการใช้เหรียญ',
-        'โปรโมชั่นช่องทางชำระเงินทั้งหมด',
-        'ส่วนลดเครื่องเก่าแลกใหม่',
-        'โบนัสส่วนลดเครื่องเก่าแลกใหม่',
-    ]) if c]
-
-    def extract_model(product_name):
-        if pd.isna(product_name):
-            return ''
-        match = re.search(r'รุ่น\s+(\S+)', str(product_name))
-        return match.group(1) if match else ''
-
-    def extract_color(option_name):
-        if pd.isna(option_name) or not str(option_name).strip():
-            return ''
-        parts = str(option_name).split(',', 1)
-        return parts[0].strip() if parts else ''
-
-    def extract_size(option_name):
-        if pd.isna(option_name) or not str(option_name).strip():
-            return ''
-        parts = str(option_name).split(',', 1)
-        if len(parts) < 2:
-            return ''
-        size_part = parts[1].strip()
-        match = re.match(r'#?(\d+)', size_part)
-        return match.group(0) if match else size_part
-
-    def clean_num(val):
-        if pd.isna(val) or val == '' or val == '-':
-            return 0.0
-        if isinstance(val, str):
-            val = val.strip().replace(',', '').replace(' ', '')
-            if val == '' or val == '-':
-                return 0.0
-        try:
-            return float(val)
-        except (ValueError, TypeError):
-            return 0.0
-
-    def safe_col_val(row, col_name):
-        if col_name and col_name in row.index:
-            return clean_num(row.get(col_name, 0))
-        return 0.0
-
-    # Pre-compute per-order sums for multi-row discount columns
-    order_seller_disc_main_pre = {}
-    order_seller_disc_other_pre = {}
-    order_shopee_disc_other_pre = {}
-    for oid_val, grp in df.groupby(order_col, sort=False):
-        oid_str = str(oid_val)
-        if seller_discount_code_col and seller_discount_code_col in df.columns:
-            order_seller_disc_main_pre[oid_str] = sum(clean_num(v) for v in grp[seller_discount_code_col])
-        else:
-            order_seller_disc_main_pre[oid_str] = 0.0
-        order_seller_disc_other_pre[oid_str] = sum(
-            sum(clean_num(v) for v in grp[c]) for c in seller_disc_other_cols if c in df.columns
-        )
-        order_shopee_disc_other_pre[oid_str] = sum(
-            sum(clean_num(v) for v in grp[c]) for c in shopee_disc_other_cols if c in df.columns
-        )
-
-    # Sort rows by the pre-locked bill order stamped at processing time.
-    # __bill_order__ is an integer (0-based order_index) already written into the df
-    # by save-mapping / apply-return-decisions, so no re-computation needed here.
-    if '__bill_order__' in df.columns:
-        df = df.sort_values(by='__bill_order__', kind='stable', na_position='last').reset_index(drop=True)
-
-    report_rows = []
-    seen_orders = set()
-    order_shipping_buyer = {}
-    order_service_fee = {}
-    order_grand_total = {}
-    order_estimated_shipping = {}
-    order_seller_disc_main = {}
-    order_seller_disc_other = {}
-    order_shopee_disc_main = {}
-    order_shopee_disc_other = {}
-    order_shopee_shipping = {}
-    order_buyer_paid = {}
-    order_commission = {}
-    order_transaction_fee = {}
-    order_total_fee = {}
-    order_actual_receive = {}
-    total_qty = 0.0
-    row_number = 0
-    model_stats = {}
-
-    for _, row in df.iterrows():
-        oid = str(row[order_col]) if pd.notna(row[order_col]) else ''
-        model = extract_model(row.get(product_col, ''))
-        sale_price = clean_num(row.get(sale_price_col, 0))
-        if preset and preset.implicit_quantity is not None:
-            qty = float(preset.implicit_quantity)
-        else:
-            qty = clean_num(row.get(qty_col, 0)) if qty_col in df.columns else 1.0
-        total_qty += qty
-        row_number += 1
-
-        option_val = row.get(option_name_col, '') if option_name_col in df.columns else ''
-        color = extract_color(option_val)
-        size = extract_size(option_val)
-
-        if model:
-            if model not in model_stats:
-                model_stats[model] = {'total_value': 0.0, 'total_qty': 0.0, 'prices': []}
-            model_stats[model]['total_value'] += sale_price * qty
-            model_stats[model]['total_qty'] += qty
-            model_stats[model]['prices'].append(sale_price)
-
-        net_sale = clean_num(row.get(net_sale_col, 0)) if net_sale_col and net_sale_col in df.columns else (sale_price * qty)
-
-        is_first_row = oid not in seen_orders
-        if is_first_row:
-            seen_orders.add(oid)
-            inv_data = invoice_lookup.get(oid, {})
-            # Read bill number from pre-stamped DF column — no re-computation
-            if '__bill_number__' in df.columns:
-                bill_num = str(row.get('__bill_number__', ''))
-            else:
-                bill_num = format_bill_number(bill_prefix, starting_bill_number + inv_data.get('order_index', 0))
-            sb = inv_data.get('shipping', 0.0)
-            sf = inv_data.get('service_fee', 0.0)
-            gt = inv_data.get('grand_total', 0.0)
-            es = clean_num(row.get(estimated_shipping_col, 0)) if estimated_shipping_col in df.columns else 0.0
-            vat_amt = inv_data.get('vat_amount', 0.0)
-            before_vat = inv_data.get('total_before_vat', 0.0)
-            recipient = str(row.get(recipient_col, '')) if recipient_col in df.columns else ''
-            sd_main = order_seller_disc_main_pre.get(oid, 0.0)
-            sd_other = order_seller_disc_other_pre.get(oid, 0.0)
-            shopee_disc_main = clean_num(row.get(shopee_discount_col, 0)) if shopee_discount_col in df.columns else 0.0
-            shopee_disc_other = order_shopee_disc_other_pre.get(oid, 0.0)
-            shopee_ship = clean_num(row.get(shopee_shipping_col, 0)) if shopee_shipping_col and shopee_shipping_col in df.columns else 0.0
-            comm_fee = safe_col_val(row, commission_col)
-            trans_fee = safe_col_val(row, transaction_fee_col)
-            svc_fee_val = sf
-            total_fee = comm_fee + trans_fee + svc_fee_val
-            buyer_paid = safe_col_val(row, buyer_paid_col)
-            actual_receive = buyer_paid + shopee_disc_main - total_fee - sb
-
-            order_shipping_buyer[oid] = sb
-            order_service_fee[oid] = sf
-            order_grand_total[oid] = gt
-            order_estimated_shipping[oid] = es
-            order_seller_disc_main[oid] = sd_main
-            order_seller_disc_other[oid] = sd_other
-            order_shopee_disc_main[oid] = shopee_disc_main
-            order_shopee_disc_other[oid] = shopee_disc_other
-            order_shopee_shipping[oid] = shopee_ship
-            order_buyer_paid[oid] = buyer_paid
-            order_commission[oid] = comm_fee
-            order_transaction_fee[oid] = trans_fee
-            order_total_fee[oid] = total_fee
-            order_actual_receive[oid] = actual_receive
-        else:
-            bill_num = ''
-            recipient = ''
-            sb = sf = gt = es = vat_amt = before_vat = None
-            sd_main = sd_other = shopee_disc_main = shopee_disc_other = shopee_ship = None
-            comm_fee = trans_fee = svc_fee_val = total_fee = buyer_paid = actual_receive = None
-
-        report_rows.append({
-            'row_num': row_number,
-            'bill_number': bill_num,
-            'recipient': recipient,
-            'order_id': oid if is_first_row else '',
-            'model': model,
-            'color': color,
-            'size': size,
-            'sale_price': sale_price,
-            'qty': qty,
-            'net_sale': net_sale,
-            'seller_disc_main': sd_main,
-            'seller_disc_other': sd_other,
-            'shopee_disc_main': shopee_disc_main,
-            'shopee_disc_other': shopee_disc_other,
-            'shipping_buyer': sb,
-            'shopee_shipping': shopee_ship,
-            'buyer_paid': buyer_paid,
-            'estimated_shipping': es,
-            'grand_total': gt,
-            'vat_amount': vat_amt,
-            'total_before_vat': before_vat,
-            'commission': comm_fee,
-            'transaction_fee': trans_fee,
-            'service_fee': sf,
-            'total_fee': total_fee,
-            'actual_receive': actual_receive,
-        })
-
+def _build_invoice_lookup(invoices):
+    """Assemble the per-order lookup dict that build_sales_data() needs from
+    session-state Invoice objects. Shared by /sales-report and /sales-report-export."""
     return {
-        'report_rows': report_rows,
-        'seen_orders': seen_orders,
-        'total_qty': total_qty,
-        'model_stats': model_stats,
-        'order_shipping_buyer': order_shipping_buyer,
-        'order_service_fee': order_service_fee,
-        'order_grand_total': order_grand_total,
-        'order_estimated_shipping': order_estimated_shipping,
-        'order_seller_disc_main': order_seller_disc_main,
-        'order_seller_disc_other': order_seller_disc_other,
-        'order_shopee_disc_main': order_shopee_disc_main,
-        'order_shopee_disc_other': order_shopee_disc_other,
-        'order_shopee_shipping': order_shopee_shipping,
-        'order_buyer_paid': order_buyer_paid,
-        'order_commission': order_commission,
-        'order_transaction_fee': order_transaction_fee,
-        'order_total_fee': order_total_fee,
-        'order_actual_receive': order_actual_receive,
+        inv.order_id: {
+            'shipping': inv.shipping, 'service_fee': inv.service_fee,
+            'grand_total': inv.grand_total, 'discount': inv.discount,
+            'subtotal': inv.subtotal, 'vat_amount': inv.vat_amount,
+            'total_before_vat': inv.total_before_vat,
+            'order_sort_key': inv.order_sort_key,
+            'order_index': inv.order_index,
+        }
+        for inv in invoices
     }
 
 
@@ -1145,37 +945,6 @@ def sales_report():
         return jsonify({'error': 'No data available. Please upload and process a CSV first.'}), 400
 
     try:
-        from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-        from reportlab.lib.styles import ParagraphStyle
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-
-        # Register Thai font (OS-aware paths)
-        import sys as _sys
-        _tahoma = _tahoma_bold = None
-        if _sys.platform == 'win32':
-            _candidates      = [r'C:\Windows\Fonts\tahoma.ttf',   r'C:\Windows\Fonts\Tahoma.ttf']
-            _candidates_bold = [r'C:\Windows\Fonts\tahomabd.ttf', r'C:\Windows\Fonts\Tahomabd.ttf']
-        else:
-            _candidates      = ['/System/Library/Fonts/Supplemental/Tahoma.ttf', '/Library/Fonts/Tahoma.ttf']
-            _candidates_bold = ['/System/Library/Fonts/Supplemental/Tahoma Bold.ttf', '/Library/Fonts/Tahoma Bold.ttf']
-        import os as _os
-        for _p in _candidates:
-            if _os.path.exists(_p): _tahoma = _p; break
-        for _p in _candidates_bold:
-            if _os.path.exists(_p): _tahoma_bold = _p; break
-        try:
-            if not _tahoma: raise FileNotFoundError
-            pdfmetrics.registerFont(TTFont('ThaiFont', _tahoma))
-            pdfmetrics.registerFont(TTFont('ThaiFont-Bold', _tahoma_bold or _tahoma))
-            thai_font = 'ThaiFont'
-            thai_font_bold = 'ThaiFont-Bold'
-        except Exception:
-            thai_font = 'Helvetica'
-            thai_font_bold = 'Helvetica-Bold'
-
         data = request.get_json() or {}
         starting_bill_str = str(data.get('starting_bill_number', '2600001'))
         bill_prefix, starting_bill_number = parse_bill_number(starting_bill_str)
@@ -1191,265 +960,22 @@ def sales_report():
         mapping = parser.column_map
         df = state.trimmed_df.copy()
 
-        invoice_lookup = {
-            inv.order_id: {
-                'shipping': inv.shipping, 'service_fee': inv.service_fee,
-                'grand_total': inv.grand_total, 'discount': inv.discount,
-                'subtotal': inv.subtotal, 'vat_amount': inv.vat_amount,
-                'total_before_vat': inv.total_before_vat,
-                'order_sort_key': inv.order_sort_key,
-                'order_index': inv.order_index,
-            }
-            for inv in state.invoices
-        }
+        invoice_lookup = _build_invoice_lookup(state.invoices)
 
-        sd = _build_sales_data(df, _get_platform_preset(state.platform), mapping, invoice_lookup, bill_prefix, starting_bill_number)
-        report_rows = sd['report_rows']
-        seen_orders = sd['seen_orders']
-        total_qty = sd['total_qty']
-        model_stats = sd['model_stats']
-        order_shipping_buyer = sd['order_shipping_buyer']
-        order_service_fee = sd['order_service_fee']
-        order_grand_total = sd['order_grand_total']
-        order_estimated_shipping = sd['order_estimated_shipping']
-        order_seller_disc_main = sd['order_seller_disc_main']
-        order_seller_disc_other = sd['order_seller_disc_other']
-        order_shopee_disc_main = sd['order_shopee_disc_main']
-        order_shopee_disc_other = sd['order_shopee_disc_other']
-        order_shopee_shipping = sd['order_shopee_shipping']
-        order_buyer_paid = sd['order_buyer_paid']
-        order_commission = sd['order_commission']
-        order_transaction_fee = sd['order_transaction_fee']
-        order_total_fee = sd['order_total_fee']
-        order_actual_receive = sd['order_actual_receive']
+        sales_data = build_sales_data(
+            df, _get_platform_preset(state.platform), mapping, invoice_lookup, bill_prefix, starting_bill_number
+        )
+        pdf_bytes = build_sales_report_pdf(sales_data, state.invoices)
 
-        # Build PDF — landscape A4 to accommodate more columns
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=14, rightMargin=14, topMargin=40, bottomMargin=30)
-
-        title_style = ParagraphStyle('Title', fontName=thai_font_bold, fontSize=14, leading=18, alignment=0)
-        header_style = ParagraphStyle('Header', fontName=thai_font_bold, fontSize=6, leading=8, alignment=1)
-        cell_style = ParagraphStyle('Cell', fontName=thai_font, fontSize=6, leading=8)
-        cell_center = ParagraphStyle('CellCenter', fontName=thai_font, fontSize=6, leading=8, alignment=1)
-        cell_right = ParagraphStyle('CellRight', fontName=thai_font, fontSize=6, leading=8, alignment=2)
-
-        elements = []
-        elements.append(Paragraph('Sales Report (รายงานยอดขาย)', title_style))
-        elements.append(Spacer(1, 12))
-
-        # Table header — 26 columns (landscape layout)
-        headers = [
-            Paragraph('ลำดับ', header_style),
-            Paragraph('เลขที่บิล', header_style),
-            Paragraph('ชื่อผู้รับ', header_style),
-            Paragraph('หมายเลข\nคำสั่งซื้อ', header_style),
-            Paragraph('รหัส\nสินค้า', header_style),
-            Paragraph('ตัวเลือก\n(สี)', header_style),
-            Paragraph('ตัวเลือก\n(ขนาด)', header_style),
-            Paragraph('ราคาขาย', header_style),
-            Paragraph('จำนวน', header_style),
-            Paragraph('รวมเป็นเงิน', header_style),
-            Paragraph('ส่วนลด\nผู้ขาย', header_style),
-            Paragraph('ส่วนลดอื่นๆ\nผู้ขาย', header_style),
-            Paragraph('ส่วนลด\nShopee', header_style),
-            Paragraph('ส่วนลดอื่นๆ\nShopee', header_style),
-            Paragraph('ค่าจัดส่ง\n(ผู้ซื้อ)', header_style),
-            Paragraph('ค่าจัดส่ง\nShopee', header_style),
-            Paragraph('ราคาสินค้า\nชำระโดยผู้ซื้อ', header_style),
-            Paragraph('ค่าจัดส่ง\nประมาณ', header_style),
-            Paragraph('จำนวนเงิน\nทั้งหมด', header_style),
-            Paragraph('VAT 7%', header_style),
-            Paragraph('ยอดก่อน\nVAT', header_style),
-            Paragraph('ค่าคอม', header_style),
-            Paragraph('Transaction\nFee', header_style),
-            Paragraph('ค่าบริการ', header_style),
-            Paragraph('ค่าธรรม\nเนียม', header_style),
-            Paragraph('จำนวนเงิน\nได้รับจริง', header_style),
-        ]
-
-        def fmt(val):
-            if val is None:
-                return ''
-            return f'{val:,.2f}'
-
-        table_data = [headers]
-        for r in report_rows:
-            qty_val = r['qty']
-            qty_str = str(int(qty_val)) if qty_val == int(qty_val) else fmt(qty_val)
-            table_data.append([
-                Paragraph(str(r['row_num']), cell_center),
-                Paragraph(r['bill_number'], cell_center),
-                Paragraph(r['recipient'], cell_style),
-                Paragraph(r['order_id'], cell_style),
-                Paragraph(r['model'], cell_style),
-                Paragraph(r['color'], cell_style),
-                Paragraph(r['size'], cell_center),
-                Paragraph(fmt(r['sale_price']), cell_right),
-                Paragraph(qty_str, cell_right),
-                Paragraph(fmt(r['net_sale']), cell_right),
-                Paragraph(fmt(r['seller_disc_main']), cell_right),
-                Paragraph(fmt(r['seller_disc_other']), cell_right),
-                Paragraph(fmt(r['shopee_disc_main']), cell_right),
-                Paragraph(fmt(r['shopee_disc_other']), cell_right),
-                Paragraph(fmt(r['shipping_buyer']), cell_right),
-                Paragraph(fmt(r['shopee_shipping']), cell_right),
-                Paragraph(fmt(r['buyer_paid']), cell_right),
-                Paragraph(fmt(r['estimated_shipping']), cell_right),
-                Paragraph(fmt(r['grand_total']), cell_right),
-                Paragraph(fmt(r['vat_amount']), cell_right),
-                Paragraph(fmt(r['total_before_vat']), cell_right),
-                Paragraph(fmt(r['commission']), cell_right),
-                Paragraph(fmt(r['transaction_fee']), cell_right),
-                Paragraph(fmt(r['service_fee']), cell_right),
-                Paragraph(fmt(r['total_fee']), cell_right),
-                Paragraph(fmt(r['actual_receive']), cell_right),
-            ])
-
-        # Landscape A4 usable width: ~814pt (842 - 2*14 margins)
-        # 26 cols total = 784pt
-        col_widths = [14, 34, 38, 54, 30, 40, 18, 28, 18, 32,
-                      30, 30, 28, 30, 30, 30, 36, 28, 34, 26,
-                      30, 28, 28, 24, 30, 36]
-        t = Table(table_data, colWidths=col_widths, repeatRows=1)
-        t.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), thai_font),
-            ('FONTSIZE', (0, 0), (-1, -1), 6),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4a90d9')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (7, 1), (-1, -1), 'RIGHT'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-        ]))
-        elements.append(t)
-
-        # Page break before summary
-        elements.append(PageBreak())
-
-        # Summary table
-        sum_title_style = ParagraphStyle('SumTitle', fontName=thai_font_bold, fontSize=11, leading=14)
-        elements.append(Paragraph('Summary (สรุป)', sum_title_style))
-        elements.append(Spacer(1, 8))
-
-        sum_shipping_buyer = sum(order_shipping_buyer.values())
-        sum_service_fee = sum(order_service_fee.values())
-        sum_grand_total = sum(order_grand_total.values())
-        sum_estimated_shipping = sum(order_estimated_shipping.values())
-        sum_seller_disc_main = sum(order_seller_disc_main.values())
-        sum_seller_disc_other = sum(order_seller_disc_other.values())
-        sum_shopee_disc_main = sum(order_shopee_disc_main.values())
-        sum_shopee_disc_other = sum(order_shopee_disc_other.values())
-        sum_shopee_shipping = sum(order_shopee_shipping.values())
-        sum_buyer_paid = sum(order_buyer_paid.values())
-        sum_commission = sum(order_commission.values())
-        sum_transaction_fee = sum(order_transaction_fee.values())
-        sum_total_fee = sum(order_total_fee.values())
-        sum_actual_receive = sum(order_actual_receive.values())
-
-        # Sum VAT from pre-computed invoice values
-        sum_vat = sum(inv.vat_amount for inv in state.invoices)
-        sum_before_vat = sum(inv.total_before_vat for inv in state.invoices)
-
-        summary_data = [
-            [Paragraph('รายการ', header_style), Paragraph('ยอดรวม', header_style)],
-            [Paragraph('จำนวนคำสั่งซื้อ', cell_style), Paragraph(f'{len(seen_orders):,}', cell_right)],
-            [Paragraph('จำนวนสินค้า (ชิ้น)', cell_style), Paragraph(f'{int(total_qty):,}', cell_right)],
-            [Paragraph('ส่วนลดโดยผู้ขาย', cell_style), Paragraph(fmt(sum_seller_disc_main), cell_right)],
-            [Paragraph('ส่วนลดอื่นๆ โดยผู้ขาย', cell_style), Paragraph(fmt(sum_seller_disc_other), cell_right)],
-            [Paragraph('ส่วนลดโดย Shopee', cell_style), Paragraph(fmt(sum_shopee_disc_main), cell_right)],
-            [Paragraph('ส่วนลดอื่นๆ โดย Shopee', cell_style), Paragraph(fmt(sum_shopee_disc_other), cell_right)],
-            [Paragraph('ค่าจัดส่ง (ผู้ซื้อ)', cell_style), Paragraph(fmt(sum_shipping_buyer), cell_right)],
-            [Paragraph('ค่าจัดส่งโดย Shopee', cell_style), Paragraph(fmt(sum_shopee_shipping), cell_right)],
-            [Paragraph('ราคาสินค้าชำระโดยผู้ซื้อ', cell_style), Paragraph(fmt(sum_buyer_paid), cell_right)],
-            [Paragraph('ค่าจัดส่งโดยประมาณ', cell_style), Paragraph(fmt(sum_estimated_shipping), cell_right)],
-            [Paragraph('จำนวนเงินทั้งหมด', cell_style), Paragraph(fmt(sum_grand_total), cell_right)],
-            [Paragraph('ยอดก่อน VAT', cell_style), Paragraph(fmt(sum_before_vat), cell_right)],
-            [Paragraph('VAT 7%', cell_style), Paragraph(fmt(sum_vat), cell_right)],
-            [Paragraph('ค่าคอมมิชชั่น', cell_style), Paragraph(fmt(sum_commission), cell_right)],
-            [Paragraph('Transaction Fee', cell_style), Paragraph(fmt(sum_transaction_fee), cell_right)],
-            [Paragraph('ค่าบริการ', cell_style), Paragraph(fmt(sum_service_fee), cell_right)],
-            [Paragraph('ค่าธรรมเนียมรวม', cell_style), Paragraph(fmt(sum_total_fee), cell_right)],
-            [Paragraph('จำนวนเงินที่ได้รับจริง', cell_style), Paragraph(fmt(sum_actual_receive), cell_right)],
-        ]
-
-        st = Table(summary_data, colWidths=[200, 120])
-        st.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), thai_font),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4a90d9')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        elements.append(st)
-
-        # Top 10 Models by Sales Value
-        elements.append(Spacer(1, 24))
-        elements.append(Paragraph('Top 10 Models by Sales Value (สินค้าขายดี 10 อันดับ)', sum_title_style))
-        elements.append(Spacer(1, 8))
-
-        # Calculate total sales value across all models
-        total_sales_value = sum(m['total_value'] for m in model_stats.values())
-
-        # Sort models by total_value descending, take top 10
-        top_models = sorted(model_stats.items(), key=lambda x: x[1]['total_value'], reverse=True)[:10]
-
-        top_header_style = ParagraphStyle('TopHeader', fontName=thai_font_bold, fontSize=8, leading=10, alignment=1)
-        top_cell = ParagraphStyle('TopCell', fontName=thai_font, fontSize=8, leading=10)
-        top_cell_right = ParagraphStyle('TopCellRight', fontName=thai_font, fontSize=8, leading=10, alignment=2)
-        top_cell_center = ParagraphStyle('TopCellCenter', fontName=thai_font, fontSize=8, leading=10, alignment=1)
-
-        top_data = [[
-            Paragraph('#', top_header_style),
-            Paragraph('Model', top_header_style),
-            Paragraph('ราคาเฉลี่ย', top_header_style),
-            Paragraph('จำนวนขาย', top_header_style),
-            Paragraph('ยอดขาย', top_header_style),
-            Paragraph('% ของยอดรวม', top_header_style),
-        ]]
-
-        for rank, (model_name, stats) in enumerate(top_models, 1):
-            avg_price = sum(stats['prices']) / len(stats['prices']) if stats['prices'] else 0
-            pct = (stats['total_value'] / total_sales_value * 100) if total_sales_value > 0 else 0
-            top_data.append([
-                Paragraph(str(rank), top_cell_center),
-                Paragraph(model_name, top_cell),
-                Paragraph(fmt(avg_price), top_cell_right),
-                Paragraph(f'{int(stats["total_qty"]):,}', top_cell_right),
-                Paragraph(fmt(stats['total_value']), top_cell_right),
-                Paragraph(f'{pct:.1f}%', top_cell_right),
-            ])
-
-        top_table = Table(top_data, colWidths=[25, 80, 80, 65, 90, 80])
-        top_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), thai_font),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4a90d9')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        elements.append(top_table)
-
-        doc.build(elements)
-        buffer.seek(0)
-
-        response = make_response(buffer.read())
+        response = make_response(pdf_bytes)
         response.headers['Content-Type'] = 'application/pdf'
         response.headers['Content-Disposition'] = 'attachment; filename=sales_report.pdf'
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         return response
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error generating sales report')
+        return jsonify({'error': 'Internal error while generating the sales report. Check server logs.'}), 500
 
 
 @app.route('/sales-report-export', methods=['POST'])
@@ -1474,53 +1000,12 @@ def sales_report_export():
         mapping = parser.column_map
         df = state.trimmed_df.copy()
 
-        invoice_lookup = {
-            inv.order_id: {
-                'shipping': inv.shipping, 'service_fee': inv.service_fee,
-                'grand_total': inv.grand_total, 'discount': inv.discount,
-                'subtotal': inv.subtotal, 'vat_amount': inv.vat_amount,
-                'total_before_vat': inv.total_before_vat,
-                'order_sort_key': inv.order_sort_key,
-                'order_index': inv.order_index,
-            }
-            for inv in state.invoices
-        }
+        invoice_lookup = _build_invoice_lookup(state.invoices)
 
-        sd = _build_sales_data(df, _get_platform_preset(state.platform), mapping, invoice_lookup, bill_prefix, starting_bill_number)
-        report_rows = sd['report_rows']
-
-        # Thai column headers matching the 26-column PDF layout
-        col_map = {
-            'row_num':          'ลำดับ',
-            'bill_number':      'เลขที่บิล',
-            'recipient':        'ชื่อผู้รับ',
-            'order_id':         'หมายเลขคำสั่งซื้อ',
-            'model':            'รหัสสินค้า',
-            'color':            'ตัวเลือก (สี)',
-            'size':             'ตัวเลือก (ขนาด)',
-            'sale_price':       'ราคาขาย',
-            'qty':              'จำนวนสินค้า',
-            'net_sale':         'รวมเป็นเงิน',
-            'seller_disc_main': 'ส่วนลดโดยผู้ขาย',
-            'seller_disc_other':'ส่วนลดอื่นๆ โดยผู้ขาย',
-            'shopee_disc_main': 'ส่วนลดโดย Shopee',
-            'shopee_disc_other':'ส่วนลดอื่นๆ โดย Shopee',
-            'shipping_buyer':   'ค่าจัดส่ง (ผู้ซื้อ)',
-            'shopee_shipping':  'ค่าจัดส่งโดย Shopee',
-            'buyer_paid':       'ราคาสินค้าที่ชำระโดยผู้ซื้อ',
-            'estimated_shipping':'ค่าจัดส่งประมาณ',
-            'grand_total':      'จำนวนเงินทั้งหมด',
-            'vat_amount':       'VAT 7%',
-            'total_before_vat': 'ยอดก่อน VAT',
-            'commission':       'ค่าคอมมิชชั่น',
-            'transaction_fee':  'Transaction Fee',
-            'service_fee':      'ค่าบริการ',
-            'total_fee':        'ค่าธรรมเนียม',
-            'actual_receive':   'จำนวนเงินที่ได้รับจริง',
-        }
-
-        export_df = pd.DataFrame(report_rows)[list(col_map.keys())]
-        export_df.rename(columns=col_map, inplace=True)
+        sales_data = build_sales_data(
+            df, _get_platform_preset(state.platform), mapping, invoice_lookup, bill_prefix, starting_bill_number
+        )
+        export_df = build_sales_export_df(sales_data['report_rows'])
 
         buffer = BytesIO()
         if fmt == 'xlsx':
@@ -1538,10 +1023,10 @@ def sales_report_export():
         resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         return resp
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error exporting sales report')
+        return jsonify({'error': 'Internal error while exporting the sales report. Check server logs.'}), 500
+
 
 
 @app.route('/sort-csv', methods=['POST'])
@@ -1595,10 +1080,9 @@ def sort_csv():
         resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         return resp
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        app.logger.exception('Error sorting CSV')
+        return jsonify({'error': 'Internal error while sorting the CSV. Check server logs.'}), 500
 
 
 @app.route('/stats')
