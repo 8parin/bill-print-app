@@ -57,4 +57,4 @@ uploads/*.csv
 archive/
 
 # Compiled Python
-*.pyc
+*.pycgraphify-out/
