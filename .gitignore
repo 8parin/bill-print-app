@@ -40,12 +40,21 @@ env/
 Thumbs.db
 
 # Output files (generated PDFs)
+output/
 output/bills/*.pdf
 
 # Debug files
+debug/
 debug/*.csv
 
-# Local test files
+# Local test files / uploads (sample fixtures live in tests/fixtures/ instead)
+uploads/
 uploads/*.csv
 !uploads/test*.csv
 !uploads/*_sample_file.csv
+
+# Old release archive / source backups (not needed in version control)
+archive/
+
+# Compiled Python
+*.pyc

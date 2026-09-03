@@ -42,7 +42,12 @@ def _debug_write(step: str, df_or_rows, columns=None):
     step     – filename prefix, e.g. '01_raw_loaded'
     df_or_rows – a DataFrame OR a list-of-dicts
     columns  – column order override (optional)
+
+    No-op unless BILL_DEBUG=1/true — avoid dumping customer data to disk
+    on every request by default.
     """
+    if os.environ.get('BILL_DEBUG', '').strip().lower() not in ('1', 'true'):
+        return
     try:
         path = os.path.join(DEBUG_DIR, f"{step}.csv")
         if isinstance(df_or_rows, pd.DataFrame):

@@ -12,26 +12,32 @@
 Bill_Print/
 ├── app.py                    # Main Flask application
 ├── render.yaml               # Render deployment config
-├── requirements.txt          # Python dependencies
+├── requirements.txt          # Python dependencies (runtime)
+├── requirements-dev.txt      # + pytest, for local/dev use
 ├── .python-version           # Pins Python 3.11 for Render
 ├── .env.example              # Required environment variables
 ├── config.json               # App config (column mappings etc.)
 │
 ├── src/
-│   ├── csv_parser.py
-│   ├── bill_generator.py
-│   ├── printer.py
-│   ├── database.py
-│   └── templates/
-│       └── default.html
+│   ├── csv_parser.py             # Platform-agnostic CSV parsing pipeline
+│   ├── bill_data.py              # Dataclasses: CompanyInfo, Customer, LineItem, Invoice
+│   ├── pdf_generator_reportlab.py  # Active PDF generator (ReportLab)
+│   ├── platform_presets.py       # Shopee / Lazada / TikTok column maps & quirks
+│   └── database.py               # Postgres persistence (company profiles)
 │
-├── templates/                # Flask HTML templates
-│   └── index.html
+├── templates/                 # Flask HTML templates
+│   ├── index.html
+│   ├── login.html
+│   └── bill_template.html
 │
-├── static/                   # CSS / JS / images
-├── tests/                    # Test suite + sample CSVs
-├── uploads/                  # Uploaded CSVs (temp)
-└── output/                   # Generated PDFs (temp, /tmp on Render)
+├── static/                    # CSS / JS / images
+├── tests/                     # pytest suite
+│   ├── fixtures/               # Sample CSVs (shopee_sample.csv, lazada_sample.csv, tiktok_sample.csv)
+│   ├── test_bill_data.py
+│   ├── test_csv_parser.py
+│   └── test_app.py
+├── uploads/                    # Uploaded CSVs (temp, gitignored)
+└── output/                     # Generated PDFs (temp, /tmp on Render, gitignored)
 ```
 
 ---
@@ -198,5 +204,5 @@ python3 app.py          # runs on http://localhost:5003
 ## Supported CSV Formats
 
 - Shopee, Lazada, TikTok Shop, WooCommerce, generic CSV
-- Sample files in `tests/` folder
+- Sample files in `tests/fixtures/` folder
 - Minimum required columns: Invoice/Order Number, Customer Name, Item Name, Quantity, Price, Date
