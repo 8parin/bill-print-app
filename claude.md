@@ -10,7 +10,7 @@
 
 ```
 Bill_Print/
-├── app.py                    # Main Flask application
+├── app.py                    # Thin entry point: app factory-ish setup + blueprint registration
 ├── render.yaml               # Render deployment config
 ├── requirements.txt          # Python dependencies (runtime)
 ├── requirements-dev.txt      # + pytest, for local/dev use
@@ -19,11 +19,30 @@ Bill_Print/
 ├── config.json               # App config (column mappings etc.)
 │
 ├── src/
-│   ├── csv_parser.py             # Platform-agnostic CSV parsing pipeline
-│   ├── bill_data.py              # Dataclasses: CompanyInfo, Customer, LineItem, Invoice
-│   ├── pdf_generator_reportlab.py  # Active PDF generator (ReportLab)
-│   ├── platform_presets.py       # Shopee / Lazada / TikTok column maps & quirks
-│   └── database.py               # Postgres persistence (company profiles)
+│   ├── csv_parser.py              # Platform-agnostic CSV parsing pipeline
+│   ├── bill_data.py               # Dataclasses: CompanyInfo, Customer, LineItem, Invoice
+│   ├── pdf_generator_reportlab.py # Active PDF generator (ReportLab)
+│   ├── platform_presets.py        # Shopee / Lazada / TikTok column maps & quirks
+│   ├── database.py                # Postgres persistence (company profiles)
+│   ├── pipeline.py                # Shared CSV -> invoices processing (process_csv)
+│   ├── session_state.py           # SessionState / SessionStore (per-browser state)
+│   ├── sales_report.py            # Sales report PDF/CSV/XLSX builders
+│   ├── fonts.py                   # Thai font loading for ReportLab
+│   ├── debug_util.py              # Optional debug CSV dumps (DEBUG_DIR)
+│   │
+│   └── web/                       # Flask web layer (Phase 4)
+│       ├── config_store.py        # Shared `config` dict, loaded once from config.json
+│       ├── state.py               # Shared SESSION_STORE singleton
+│       ├── helpers.py             # login_required, get_state/save_state/get_sid,
+│       │                          # _make_parser, get_company_info, bill-number helpers
+│       └── routes/                # One blueprint per feature area
+│           ├── auth.py            # login, logout, index ('/')
+│           ├── uploads.py         # upload, set-platform, save-mapping,
+│           │                      # apply-return-decisions, get-field-definitions
+│           ├── bills.py           # preview*, generate*, download*, debug-bills,
+│           │                      # stats, version
+│           ├── profiles.py        # save-company, api/company-profiles*
+│           └── reports.py         # sales-report(-export), sort-csv
 │
 ├── templates/                 # Flask HTML templates
 │   ├── index.html

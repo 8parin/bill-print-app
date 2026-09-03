@@ -81,3 +81,51 @@ class TestGenericErrorHandling:
         # The raw exception text must never reach the client.
         assert secret_detail not in data['error']
         assert data['error'] == 'Internal error while saving the column mapping. Check server logs.'
+
+
+class TestRouteMap:
+    """Phase 4 refactor: app.py was split into Flask blueprints
+    (src/web/routes/*.py). This asserts every pre-existing route still
+    resolves to the exact same (method, path) pair — i.e. the blueprint
+    split didn't change any URL, drop a route, or add a url_prefix."""
+
+    # (HTTP method, URL path) pairs that existed as plain @app.route(...)
+    # endpoints before the blueprint split.
+    EXPECTED_ROUTES = [
+        ('GET', '/login'),
+        ('POST', '/login'),
+        ('GET', '/logout'),
+        ('GET', '/'),
+        ('POST', '/upload'),
+        ('POST', '/save-company'),
+        ('GET', '/api/company-profiles'),
+        ('POST', '/api/company-profiles/select/<profile_name>'),
+        ('DELETE', '/api/company-profiles/<profile_name>'),
+        ('GET', '/get-field-definitions'),
+        ('POST', '/set-platform'),
+        ('POST', '/save-mapping'),
+        ('POST', '/apply-return-decisions'),
+        ('GET', '/preview'),
+        ('POST', '/preview-by-order'),
+        ('POST', '/generate'),
+        ('GET', '/debug-bills'),
+        ('POST', '/generate-one'),
+        ('POST', '/generate-by-order'),
+        ('GET', '/download/<filename>'),
+        ('GET', '/download-all'),
+        ('POST', '/sales-report'),
+        ('POST', '/sales-report-export'),
+        ('POST', '/sort-csv'),
+        ('GET', '/stats'),
+        ('GET', '/version'),
+    ]
+
+    def test_all_pre_existing_routes_resolve(self):
+        url_map_entries = {
+            (method, rule.rule)
+            for rule in app_module.app.url_map.iter_rules()
+            for method in rule.methods
+            if method not in ('HEAD', 'OPTIONS')
+        }
+        for method, path in self.EXPECTED_ROUTES:
+            assert (method, path) in url_map_entries, f'missing route: {method} {path}'
