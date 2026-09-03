@@ -94,6 +94,18 @@ class CSVParser:
         except UnicodeDecodeError:
             df = pd.read_csv(file_path, encoding='tis-620', dtype=str)
 
+        # Shopee exports can end with trailing rows that are entirely blank
+        # (all-comma lines). If left in, forward-fill logic elsewhere would
+        # attribute them to the last real order, producing a bogus "nan" /
+        # qty 0 line item on that order's bill. Drop rows that are blank
+        # (NaN or whitespace-only) across every column, without mutating
+        # real blank-string cells elsewhere (those are relied on by later
+        # `.replace('', pd.NA)` calls).
+        blank_mask = df.replace(r'^\s*$', pd.NA, regex=True).isna().all(axis=1)
+        if blank_mask.any():
+            df = df[~blank_mask]
+        df = df.reset_index(drop=True)
+
         # Strip whitespace and BOM from column names
         df.columns = [col.strip().lstrip('\ufeff') for col in df.columns]
 
@@ -760,6 +772,28 @@ class CSVParser:
         items = []
         for _, row in invoice_df.iterrows():
             product_name = str(row[self.column_map['product_name']])
+
+            # Defensive guard: skip rows that are neither real items nor
+            # description rows already caught upstream — e.g. leftover
+            # all-blank rows whose forward-filled order_id makes them look
+            # like a legitimate 2nd+ item row. Only skip when BOTH the
+            # product name is empty/NaN AND the quantity is empty/zero, so
+            # we never drop a genuine item that merely has qty 0.
+            name_is_blank = pd.isna(row[self.column_map['product_name']]) or product_name.strip() in ('', 'nan')
+            if name_is_blank:
+                qty_col = self.column_map.get('quantity')
+                if self.platform and self.platform.implicit_quantity is not None:
+                    # Lazada-style: no real quantity column to check; blank
+                    # product name alone is enough to treat as empty.
+                    qty_is_blank = True
+                elif qty_col and qty_col in row.index:
+                    raw_qty = row[qty_col]
+                    qty_is_blank = pd.isna(raw_qty) or str(raw_qty).strip() in ('', 'nan') or self.clean_numeric(raw_qty) == 0
+                else:
+                    qty_is_blank = True
+                if qty_is_blank:
+                    continue
+
             variant_col = self.column_map.get('variant')
             variant = ''
             if variant_col and variant_col in row.index:
