@@ -59,6 +59,29 @@ Bill_Print/
 └── output/                     # Generated PDFs (temp, /tmp on Render, gitignored)
 ```
 
+## Code Navigation — "to change X, edit Y"
+
+| Task | File(s) |
+|---|---|
+| Bill PDF layout / fonts / paper size | `src/pdf_generator_reportlab.py`, `src/fonts.py`, `fonts/` |
+| Bill preview HTML | `templates/bill_template.html` |
+| CSV parsing, date/number cleaning, return & cancel filtering | `src/csv_parser.py` |
+| Order of processing steps (filter → group → parse → sort) | `src/pipeline.py` (`process_csv`) |
+| Add/adjust a marketplace platform (columns, quirks, report columns) | `src/platform_presets.py` |
+| VAT math, invoice/line-item fields | `src/bill_data.py` |
+| Sales report PDF/CSV/XLSX content | `src/sales_report.py` |
+| A specific URL route | `src/web/routes/` — auth.py (`/`, login), uploads.py (upload/mapping), bills.py (preview/generate/download/version), profiles.py (company profiles), reports.py (sales report, sort-csv) |
+| Per-browser session state | `src/session_state.py` + `src/web/state.py` |
+| Shared route helpers (auth decorator, bill numbering, state access) | `src/web/helpers.py` |
+| App config dict (config.json) | `src/web/config_store.py` |
+| Company profile DB persistence | `src/database.py` |
+| Frontend behavior | `static/js/app.js`, `templates/index.html` |
+| App startup / blueprint wiring / env guards | `app.py` (keep `gunicorn app:app` working) |
+
+**Verify any change**: `.venv/bin/python -m pytest tests/ -q` (bare `python3` lacks deps). Golden regression values live in `tests/test_csv_parser.py` — if they fail, you changed billing math.
+**Check what's deployed**: https://bill-print-app.onrender.com/version returns the live commit.
+**Gotcha**: blueprints resolve `_make_parser` and DB functions dynamically via `import app` — don't remove the re-exports at the top of `app.py`.
+
 ---
 
 ## Deployment (Render)
